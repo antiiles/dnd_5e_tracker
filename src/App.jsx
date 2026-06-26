@@ -461,10 +461,6 @@ const CSS = `
 .ds-dot[data-on="1"][data-kind="f"]{background:${T.crimson};border-color:${T.crimson};}
 
 /* attacks & slots */
-.ds-attack{display:grid;grid-template-columns:1fr 64px 1fr 30px;gap:8px;align-items:center;margin-bottom:8px;}
-.ds-attack .ds-input{width:100%;padding:6px 8px;font-size:14px;}
-@media(max-width:560px){.ds-attack{grid-template-columns:1fr 56px 30px;}.ds-attack .dmg{grid-column:1 / 3;}}
-
 .sl-pips{display:flex;flex-wrap:wrap;gap:5px;min-height:18px;}
 .ds-sp{width:16px;height:16px;border-radius:50%;border:1px solid ${T.violetDim};cursor:pointer;background:transparent;}
 .ds-sp[data-on="1"]{background:${T.violet};border-color:${T.violet};}
