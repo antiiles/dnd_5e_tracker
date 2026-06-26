@@ -44,8 +44,16 @@ No backend. User content stored in IndexedDB.
 
 ## Spell schema
 
+Fields per entry in `public/content/spells/`:
+- `"id"`, `"name"` — required identifiers.
+- `"level"` — integer; `0` = cantrip.
+- `"school"` — e.g. `"evocation"`, `"illusion"`.
+- `"castingTime"`, `"range"`, `"duration"` — display strings.
+- `"concentration"` — boolean.
+- `"ritual"` — boolean.
 - `"classes": ["wizard", "sorcerer"]` — an empty array means available to all classes
   (safe default for incomplete data).
+- `"description"` — short plain-text summary.
 
 ## Mechanic expandability principle
 

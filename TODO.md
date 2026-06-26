@@ -5,12 +5,12 @@ in [docs/CODEMAP.md](docs/CODEMAP.md). Each item below is a self-contained sessi
 
 ## Current state vs. target
 
-Items 1–4 are done. **Remaining gaps vs ARCHITECTURE.md:**
+Items 1–5 are done. **Remaining gaps vs ARCHITECTURE.md:**
 
-- **Adapters still partially flatten content.** `adaptClasses` now includes `resources` and
-  `mechanics` but still drops `subclasses` — consumed by item 5.
+- **Adapters still partially flatten content.** `adaptClasses` drops `subclasses` — deferred (no subclass UI yet).
 - Classes are now keyed by `id` in the adapted map (matching the JSON files). Races/feats/etc. are
   still keyed by `name` (no change needed yet).
+- Warlock Mystic Arcanum (levels 11+) not yet modelled — see item 5b.
 
 ---
 
@@ -34,7 +34,7 @@ Replace any hardcoded class-specific resource UI (warlock slots aside — that's
 ## 4. Class mechanics dynamic loading ✅ done
 Read the `mechanics` array from the active class (`["invocations", "patrons", "pacts"]` etc.) and conditionally fetch and display the matching content sections. Sections that aren't in the class's `mechanics` list should not appear.
 
-## 5. Spell system
+## 5. Spell system ✅ done
 - Drive spell slot display from class `spellcasting.type` (`full` / `half` / `warlock` / `third`) using the slot tables already in the app
 - Support `learningType: "prepare" | "known"` — prepared casters get a daily prep UI, known casters get a fixed known list
 - When spells content is populated, filter the available list by `classes` field (`[]` = all classes)
@@ -46,6 +46,9 @@ Build the interface for users to add their own content:
 - Store in IndexedDB under a key per type
 - Merge with SRD content at load time (user IDs override SRD IDs)
 - Show loaded user files with option to remove
+
+## 5b. Warlock Mystic Arcanum
+At level 11+ warlocks gain once-per-long-rest castings of 6th–9th-level spells (one spell per tier, gained at levels 11/13/15/17) that don't use spell slots. The spellbook's pool filter caps at the highest slot level (`max > 0`), so Mystic Arcanum spells would be invisible. Model as a set of per-spell `toggle` resources keyed by level (e.g. `arcanum-6`, `arcanum-7`) rather than slots — closest to the existing class-resource `toggle` displayType. Separate from item 5 to keep scope bounded.
 
 ## 7. Mobile UI audit
 Run the app on a real mobile viewport (or DevTools). Fix layout issues: tap targets too small, horizontal overflow, inputs hard to use on touch. The existing CSS was not designed for mobile.

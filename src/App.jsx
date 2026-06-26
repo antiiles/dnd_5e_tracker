@@ -66,6 +66,7 @@ const adaptClasses = (rows) =>
         saves: c.savingThrows || [],
         spellAbility: (c.spellcasting && c.spellcasting.ability) || "",
         caster: (c.spellcasting && c.spellcasting.type) || null,
+        learning: (c.spellcasting && c.spellcasting.learningType) || null,
         features: (c.features || []).map((f) => ({ level: f.level, name: f.name, desc: f.description })),
         resources: c.resources || [],
         mechanics: c.mechanics || [],
@@ -81,6 +82,20 @@ const adaptInvocations = (rows) =>
   rows.map((i) => ({ name: i.name, level: i.prerequisiteLevel, prereq: i.prerequisite || "", desc: i.description }));
 const adaptPatrons = (rows) => Object.fromEntries(rows.map((p) => [p.name, p.description]));
 const adaptPacts = (rows) => Object.fromEntries(rows.map((p) => [p.name, p.description]));
+const adaptSpells = (rows) =>
+  rows.map((s) => ({
+    id: s.id,
+    name: s.name,
+    level: s.level ?? 0,
+    school: s.school || "",
+    castingTime: s.castingTime || "",
+    range: s.range || "",
+    duration: s.duration || "",
+    concentration: !!s.concentration,
+    ritual: !!s.ritual,
+    classes: Array.isArray(s.classes) ? s.classes : [],
+    description: s.description || "",
+  }));
 
 const MECHANIC_ADAPTERS = {
   invocations: adaptInvocations,
@@ -90,8 +105,8 @@ const MECHANIC_ADAPTERS = {
 
 // Load every content type and adapt into the constant shapes used in render.
 async function loadContent() {
-  const [races, classes, skills, feats, weapons] = await Promise.all(
-    ["races", "classes", "skills", "feats", "weapons"].map(loadContentType)
+  const [races, classes, skills, feats, weapons, spells] = await Promise.all(
+    ["races", "classes", "skills", "feats", "weapons", "spells"].map(loadContentType)
   );
 
   // Only fetch mechanic folders declared by at least one class
@@ -108,6 +123,7 @@ async function loadContent() {
     SKILLS: adaptSkills(skills),
     FEATS: adaptFeats(feats),
     WEAPONS: adaptWeapons(weapons),
+    SPELLS: adaptSpells(spells),
     INVOCATIONS: MECHANIC_ADAPTERS.invocations(mechanicData.invocations || []),
     PATRONS: MECHANIC_ADAPTERS.patrons(mechanicData.patrons || []),
     PACTS: MECHANIC_ADAPTERS.pacts(mechanicData.pacts || []),
@@ -132,6 +148,13 @@ const WARLOCK_SLOTS = {
   1: [1, 1], 2: [1, 2], 3: [2, 2], 4: [2, 2], 5: [3, 2], 6: [3, 2], 7: [4, 2], 8: [4, 2],
   9: [5, 2], 10: [5, 2], 11: [5, 3], 12: [5, 3], 13: [5, 3], 14: [5, 3], 15: [5, 3], 16: [5, 3],
   17: [5, 4], 18: [5, 4], 19: [5, 4], 20: [5, 4],
+};
+// Third-caster (Eldritch Knight / Arcane Trickster subclasses); slots start at class level 3
+const THIRD_SLOTS = {
+  3: [2], 4: [3], 5: [3], 6: [3], 7: [4, 2], 8: [4, 2], 9: [4, 2],
+  10: [4, 3], 11: [4, 3], 12: [4, 3], 13: [4, 3, 2], 14: [4, 3, 2],
+  15: [4, 3, 2], 16: [4, 3, 3], 17: [4, 3, 3], 18: [4, 3, 3],
+  19: [4, 3, 3, 1], 20: [4, 3, 3, 1],
 };
 
 // How many Eldritch Invocations a warlock knows at each level
@@ -178,8 +201,9 @@ function emptySlots() {
 function slotsFor(caster, level) {
   const s = emptySlots();
   const lv = Math.max(1, Math.min(20, num(level, 1)));
-  if (caster === "full" || caster === "half") {
-    const row = (caster === "full" ? FULL_SLOTS : HALF_SLOTS)[lv] || [];
+  if (caster === "full" || caster === "half" || caster === "third") {
+    const table = caster === "full" ? FULL_SLOTS : caster === "half" ? HALF_SLOTS : THIRD_SLOTS;
+    const row = table[lv] || [];
     row.forEach((n, i) => (s[i + 1] = { cur: n, max: n }));
   } else if (caster === "warlock") {
     const [slvl, count] = WARLOCK_SLOTS[lv] || [0, 0];
@@ -224,6 +248,7 @@ function makeCharacter(name = "New Adventurer") {
     invocations: [],
     familiar: { enabled: false, name: "", form: "", ac: 12, hp: { current: 1, max: 1, temp: 0 }, speed: "", notes: "", attacks: [] },
     resources: {},
+    spells: [],
     features: "",
     equipment: "",
     bio: "",
@@ -264,6 +289,7 @@ function hydrateCharacter(raw) {
   c.attacks = (Array.isArray(raw.attacks) ? raw.attacks : []).map(normalizeAttack).filter(Boolean);
   c.feats = Array.isArray(raw.feats) ? raw.feats : [];
   c.invocations = Array.isArray(raw.invocations) ? raw.invocations : [];
+  c.spells = Array.isArray(raw.spells) ? raw.spells : [];
   c.familiar = { ...base.familiar, ...(raw.familiar || {}) };
   c.familiar.hp = { ...base.familiar.hp, ...((raw.familiar && raw.familiar.hp) || {}) };
   c.familiar.attacks = Array.isArray(raw.familiar && raw.familiar.attacks) ? raw.familiar.attacks : [];
@@ -459,6 +485,16 @@ const CSS = `
 .ds-res-used{background:${T.panel}!important;color:${T.faint}!important;border-color:${T.line}!important;}
 .ds-textarea{width:100%;min-height:150px;resize:vertical;line-height:1.6;font-size:15px;}
 .ds-muted{color:${T.dim};font-size:13px;}
+
+/* spellbook */
+.ds-sb-section{margin-bottom:14px;}
+.ds-sb-lvl-head{font-family:'Cinzel',serif;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:${T.violet};margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid ${T.lineSoft};}
+.ds-sb-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:5px;}
+.ds-sb-card{background:${T.ink2};border:1px solid ${T.line};border-radius:8px;padding:7px 10px;cursor:pointer;user-select:none;transition:border-color .12s,background .12s;}
+.ds-sb-card:hover{border-color:${T.violetDim};}
+.ds-sb-on{background:${T.panel2}!important;border-color:${T.violet}!important;}
+.ds-sb-name{font-size:13px;font-weight:500;color:${T.text};margin-bottom:2px;}
+.ds-sb-tags{font-size:10px;color:${T.faint};text-transform:capitalize;}
 .ds-empty{color:${T.faint};font-style:italic;font-size:14px;padding:6px 0;}
 .ds-feat{padding:9px 0;border-bottom:1px solid ${T.lineSoft};}
 .ds-feat:last-child{border-bottom:none;}
@@ -723,7 +759,7 @@ export default function App() {
     );
   }
 
-  const { RACES, CLASSES, SKILLS, FEATS, WEAPONS, INVOCATIONS, PATRONS, PACTS } = content;
+  const { RACES, CLASSES, SKILLS, FEATS, WEAPONS, SPELLS, INVOCATIONS, PATRONS, PACTS } = content;
   const WEAPON_BY_NAME = Object.fromEntries(WEAPONS.map((w) => [w.name, w]));
   // Combine race + subrace ability bonuses
   const raceBonuses = (raceName, subraceName) => {
@@ -1952,6 +1988,102 @@ export default function App() {
     </div>
   );
 
+  const renderSpellbook = () => {
+    if (!classDef || !classDef.caster) return null;
+    if (SPELLS.length === 0) {
+      return (
+        <div className="ds-panel">
+          <div className="ds-panel-title">Spellbook</div>
+          <p className="ds-muted">No spells loaded. Add entries to <code>public/content/spells/srd.json</code>.</p>
+        </div>
+      );
+    }
+
+    const filledLevels = SPELL_LEVELS.filter(l => (active.spellSlots[l]?.max || 0) > 0);
+    const highestSlotLevel = filledLevels.length ? Math.max(...filledLevels) : 0;
+
+    const classSpells = SPELLS.filter(sp =>
+      (sp.classes.length === 0 || sp.classes.includes(activeClassId)) &&
+      (sp.level === 0 || sp.level <= highestSlotLevel)
+    );
+
+    if (classSpells.length === 0) {
+      return (
+        <div className="ds-panel">
+          <div className="ds-panel-title">Spellbook</div>
+          <p className="ds-muted">
+            {highestSlotLevel === 0
+              ? "No spell slots yet — level up or set slot counts above to see available spells."
+              : "No spells in the loaded data match this class."}
+          </p>
+        </div>
+      );
+    }
+
+    const byLevel = {};
+    classSpells.forEach(sp => { (byLevel[sp.level] = byLevel[sp.level] || []).push(sp); });
+
+    const chosenSpells = active.spells || [];
+    const spellById = Object.fromEntries(SPELLS.map(s => [s.id, s]));
+    const toggleSpell = (id) =>
+      patch(c => ({
+        spells: (c.spells || []).includes(id)
+          ? (c.spells || []).filter(s => s !== id)
+          : [...(c.spells || []), id],
+      }));
+
+    const isPrepare = classDef.learning === "prepare";
+    const isWarlock = classDef.caster === "warlock";
+    const pactLevel = isWarlock ? (WARLOCK_SLOTS[lvlClamped] || [0])[0] : 0;
+    const prepMax = isPrepare ? Math.max(1, mods[classDef.spellAbility] + charLevel) : 0;
+    const prepCount = chosenSpells.filter(id => (spellById[id]?.level || 0) > 0).length;
+
+    const orderedLevels = [0, ...SPELL_LEVELS].filter(l => byLevel[l]?.length);
+
+    return (
+      <div className="ds-panel">
+        <div className="ds-panel-title">Spellbook</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, marginTop: -4 }}>
+          <span className="ds-muted">{isPrepare ? "Prepared (cantrips free)" : "Known spells"}</span>
+          <span style={{ fontSize: 14, color: T.violet, fontWeight: 600 }}>
+            {isPrepare ? `${prepCount} / ${prepMax}` : prepCount}
+          </span>
+        </div>
+        {isWarlock && (
+          <p className="ds-muted" style={{ marginBottom: 12 }}>
+            Pact Magic — all leveled spells are cast using your level-{pactLevel} pact slot.
+          </p>
+        )}
+        {orderedLevels.map(lvl => (
+          <div key={lvl} className="ds-sb-section">
+            <div className="ds-sb-lvl-head">{lvl === 0 ? "Cantrips" : `Level ${lvl}`}</div>
+            <div className="ds-sb-grid">
+              {(byLevel[lvl] || []).map(sp => {
+                const chosen = chosenSpells.includes(sp.id);
+                const tags = [sp.school];
+                if (sp.concentration) tags.push("conc.");
+                if (sp.ritual) tags.push("ritual");
+                return (
+                  <div
+                    key={sp.id}
+                    className={`ds-sb-card${chosen ? " ds-sb-on" : ""}`}
+                    onClick={() => toggleSpell(sp.id)}
+                    title={sp.description}
+                    role="checkbox"
+                    aria-checked={chosen}
+                  >
+                    <div className="ds-sb-name">{sp.name}</div>
+                    <div className="ds-sb-tags">{tags.join(" · ")}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const renderFamiliar = () => {
     const charDC = spellDC != null ? spellDC : 8 + pb;
     if (!fam.enabled) {
@@ -2333,6 +2465,7 @@ export default function App() {
             {renderResources()}
             {renderAttacks()}
             {renderSpellcasting()}
+            {renderSpellbook()}
           </div>
         )}
 
