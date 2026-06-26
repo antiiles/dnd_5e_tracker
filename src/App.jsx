@@ -95,6 +95,7 @@ const adaptSpells = (rows) =>
     ritual: !!s.ritual,
     classes: Array.isArray(s.classes) ? s.classes : [],
     description: s.description || "",
+    action: s.action || null,
   }));
 
 const MECHANIC_ADAPTERS = {
@@ -489,12 +490,23 @@ const CSS = `
 /* spellbook */
 .ds-sb-section{margin-bottom:14px;}
 .ds-sb-lvl-head{font-family:'Cinzel',serif;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:${T.violet};margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid ${T.lineSoft};}
-.ds-sb-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:5px;}
-.ds-sb-card{background:${T.ink2};border:1px solid ${T.line};border-radius:8px;padding:7px 10px;cursor:pointer;user-select:none;transition:border-color .12s,background .12s;}
-.ds-sb-card:hover{border-color:${T.violetDim};}
-.ds-sb-on{background:${T.panel2}!important;border-color:${T.violet}!important;}
-.ds-sb-name{font-size:13px;font-weight:500;color:${T.text};margin-bottom:2px;}
+.ds-sb-row{display:flex;align-items:flex-start;gap:9px;padding:6px 4px;border-bottom:1px solid ${T.lineSoft};}
+.ds-sb-row.ds-sb-on{background:rgba(154,123,224,0.06);}
+.ds-sb-add{flex:0 0 auto;width:26px;height:26px;border-radius:7px;border:1px solid ${T.violetDim};background:transparent;color:${T.violet};cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;}
+.ds-sb-add.on{background:${T.violet};border-color:${T.violet};color:${T.ink};}
+.ds-sb-body{flex:1 1 auto;cursor:pointer;min-width:0;}
+.ds-sb-line{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
+.ds-sb-name{font-size:14px;font-weight:500;color:${T.text};}
 .ds-sb-tags{font-size:10px;color:${T.faint};text-transform:capitalize;}
+.ds-sb-summary{font-size:11px;color:${T.violet};margin-left:auto;white-space:nowrap;}
+.ds-sb-detail{margin-top:5px;font-size:13px;color:${T.dim};line-height:1.5;}
+.ds-sb-detail p{margin:2px 0 0;}
+.ds-sb-meta{font-size:11px;color:${T.faint};text-transform:capitalize;}
+
+/* derived spell attacks */
+.ds-sub-label{font-family:'Cinzel',serif;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:${T.gold};margin:14px 0 8px;}
+.ds-atk-derived{border-style:dashed;}
+.ds-atk-name-static{flex:1 1 auto;font-family:'Cinzel',serif;font-size:15px;color:${T.text};}
 .ds-empty{color:${T.faint};font-style:italic;font-size:14px;padding:6px 0;}
 .ds-feat{padding:9px 0;border-bottom:1px solid ${T.lineSoft};}
 .ds-feat:last-child{border-bottom:none;}
@@ -597,6 +609,7 @@ export default function App() {
   const [showData, setShowData] = useState(false);
   const [importBuf, setImportBuf] = useState("");
   const [content, setContent] = useState(null); // SRD content loaded from public/content/
+  const [openSpell, setOpenSpell] = useState(null); // spellbook row expanded for details
 
   const flash = (text) => setToast({ text, id: Math.random() });
 
@@ -798,6 +811,7 @@ export default function App() {
     ? classDef.features.filter((f) => f.level <= charLevel)
     : [];
   const classMechanics = classDef?.mechanics || [];
+  const spellById = Object.fromEntries(SPELLS.map((s) => [s.id, s]));
   const lvlClamped = Math.max(1, Math.min(20, charLevel));
   const resourceMax = (r) => {
     const m = r.max;
@@ -960,6 +974,59 @@ export default function App() {
     return { toHit: fmtMod(amod + prof + magic), toHitParts: hitParts, damage: dice ? `${dice}${fmtFlat(dmgFlat)} ${a.damageType || ""}`.trim() : "—", damageParts: dmgParts, effects };
   };
 
+  // ── spell → action integration ──
+  // Cantrip damage/beams scale at character levels 5/11/17.
+  const cantripMult = (lvl) => (lvl >= 17 ? 4 : lvl >= 11 ? 3 : lvl >= 5 ? 2 : 1);
+  const scaleDice = (dice, factor) => {
+    const m = /^(\d+)d(\d+)$/.exec(String(dice || "").trim());
+    if (!m || factor <= 1) return dice || "";
+    return `${parseInt(m[1], 10) * factor}d${m[2]}`;
+  };
+  const spellAbilityKey = active.spellAbility || (classDef && classDef.spellAbility) || "cha";
+  // Map a chosen spell into the attack shape computeAttack consumes (attack/save only).
+  const spellToAttack = (spell) => {
+    if (spell.id === "eldritch-blast") {
+      return { id: spell.id, kind: "spell", name: spell.name, eldritchBlast: true,
+        dice: "1d10", damageType: "force", addMod: false, magic: 0, bonusDmg: 0, effect: "" };
+    }
+    const act = spell.action || {};
+    const factor = spell.level === 0 && act.cantripScaling === "dice" ? cantripMult(charLevel) : 1;
+    return {
+      id: spell.id, kind: "spell", name: spell.name,
+      mode: act.type === "save" ? "save" : "attack",
+      saveAbility: act.save || "dex",
+      dice: scaleDice(act.damage, factor),
+      damageType: act.damageType || "",
+      addMod: !!act.addSpellMod, magic: 0, bonusDmg: 0, effect: "",
+    };
+  };
+  // Result object (same shape as computeAttack) for any actionable spell, incl. healing.
+  const computeSpellCard = (spell) => {
+    const act = spell.action || {};
+    if (act.type === "heal") {
+      const smod = mods[spellAbilityKey];
+      const factor = spell.level === 0 && act.cantripScaling === "dice" ? cantripMult(charLevel) : 1;
+      const dice = scaleDice(act.damage, factor);
+      const flat = act.addSpellMod ? smod : 0;
+      const parts = dice ? [dice] : [];
+      if (act.addSpellMod) parts.push(`${spellAbilityKey.toUpperCase()} ${fmtMod(smod)}`);
+      const amount = `${dice}${flat ? fmtFlat(flat) : ""}`.trim() || "—";
+      return { heal: amount, healParts: parts, effects: spell.description ? [spell.description] : [] };
+    }
+    const r = computeAttack(spellToAttack(spell));
+    return { ...r, effects: spell.description ? [spell.description] : [] };
+  };
+  // Short one-line summary of a spell's mechanics (for the spellbook list).
+  const spellSummary = (spell) => {
+    const act = spell.action;
+    if (!act || !act.type || act.type === "none") return null;
+    const r = computeSpellCard(spell);
+    if (act.type === "heal") return `Heals ${r.heal}`;
+    if (r.save) return r.damage && r.damage !== "—" ? `${r.save} · ${r.damage}` : r.save;
+    const hit = r.perBeam ? `${r.toHit} ea. beam` : `${r.toHit} to hit`;
+    return `${hit} · ${r.damage}`;
+  };
+
   const toggleSlot = (lvl, idx) => {
     const slot = active.spellSlots[lvl];
     // pips represent used; clicking the nth pip sets cur so that 'idx+1' are used
@@ -1008,6 +1075,7 @@ export default function App() {
         hitDice: { total: lvl, remaining: lvl, dieType: def.hitDie },
         spellSlots: slotsFor(def.caster, lvl),
         resources: {},
+        spells: [],
       };
       if (id === "warlock") {
         out.patron = c.patron || "Great Old One";
@@ -1770,6 +1838,9 @@ export default function App() {
 
     const kindLabel = { weapon: "weapon", spell: "spell", custom: "custom", manual: "manual" };
     const attacks = active.attacks || [];
+    const spellActions = (active.spells || [])
+      .map((id) => spellById[id])
+      .filter((s) => s && s.action && s.action.type && s.action.type !== "none");
 
     return (
       <div className="ds-panel">
@@ -1843,6 +1914,47 @@ export default function App() {
             </div>
           );
         })}
+
+        {spellActions.length > 0 && (
+          <div className="ds-spell-actions">
+            <div className="ds-sub-label">From spellbook</div>
+            {spellActions.map((spell) => {
+              const r = computeSpellCard(spell);
+              const lvl = spell.level === 0 ? "cantrip" : `level ${spell.level}`;
+              return (
+                <div className="ds-atk ds-atk-derived" key={`sp-${spell.id}`}>
+                  <div className="ds-atk-top">
+                    <span className="ds-atk-name-static">{spell.name}</span>
+                    <span className="ds-atk-kind">spell · {lvl}</span>
+                  </div>
+                  <div className="ds-atk-result">
+                    <div className="ds-atk-stat">
+                      <div className="lab">{r.heal ? "Healing" : r.save ? "Spell save DC" : r.perBeam ? "To hit (each beam)" : "To hit"}</div>
+                      <div className="val">{r.heal ? r.heal : r.save ? r.save : r.toHit}</div>
+                      {!r.heal && r.toHitParts && <div className="src">{r.toHitParts.join(" · ")}</div>}
+                      {r.heal && r.healParts && r.healParts.length > 0 && <div className="src">{r.healParts.join(" · ")}</div>}
+                    </div>
+                    {!r.heal && (
+                      <div className="ds-atk-stat">
+                        <div className="lab">{r.perBeam ? `Damage (×${r.beams})` : "Damage"}</div>
+                        <div className="val">{r.damage}</div>
+                        {r.damageParts && r.damageParts.length > 0 && <div className="src">{r.damageParts.join(" · ")}</div>}
+                      </div>
+                    )}
+                  </div>
+                  {r.effects && r.effects.length > 0 && (
+                    <ul className="ds-atk-fx">
+                      {r.effects.map((fx, i) => (
+                        <li key={i}>{fx}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              );
+            })}
+            <p className="ds-muted" style={{ marginTop: 6 }}>Add or remove these in the Spellbook below.</p>
+          </div>
+        )}
       </div>
     );
   };
@@ -2024,7 +2136,6 @@ export default function App() {
     classSpells.forEach(sp => { (byLevel[sp.level] = byLevel[sp.level] || []).push(sp); });
 
     const chosenSpells = active.spells || [];
-    const spellById = Object.fromEntries(SPELLS.map(s => [s.id, s]));
     const toggleSpell = (id) =>
       patch(c => ({
         spells: (c.spells || []).includes(id)
@@ -2057,29 +2168,46 @@ export default function App() {
         {orderedLevels.map(lvl => (
           <div key={lvl} className="ds-sb-section">
             <div className="ds-sb-lvl-head">{lvl === 0 ? "Cantrips" : `Level ${lvl}`}</div>
-            <div className="ds-sb-grid">
-              {(byLevel[lvl] || []).map(sp => {
-                const chosen = chosenSpells.includes(sp.id);
-                const tags = [sp.school];
-                if (sp.concentration) tags.push("conc.");
-                if (sp.ritual) tags.push("ritual");
-                return (
-                  <div
-                    key={sp.id}
-                    className={`ds-sb-card${chosen ? " ds-sb-on" : ""}`}
+            {(byLevel[lvl] || []).map(sp => {
+              const chosen = chosenSpells.includes(sp.id);
+              const open = openSpell === sp.id;
+              const tags = [sp.school];
+              if (sp.concentration) tags.push("conc.");
+              if (sp.ritual) tags.push("ritual");
+              const summary = spellSummary(sp);
+              const meta = [sp.castingTime, sp.range, sp.duration].filter(Boolean).join(" · ");
+              return (
+                <div key={sp.id} className={`ds-sb-row${chosen ? " ds-sb-on" : ""}`}>
+                  <button
+                    className={`ds-sb-add${chosen ? " on" : ""}`}
                     onClick={() => toggleSpell(sp.id)}
-                    title={sp.description}
-                    role="checkbox"
-                    aria-checked={chosen}
+                    aria-pressed={chosen}
+                    aria-label={chosen ? `Remove ${sp.name}` : `Add ${sp.name}`}
+                    title={chosen ? "Remove from spellbook" : "Add to spellbook"}
                   >
-                    <div className="ds-sb-name">{sp.name}</div>
-                    <div className="ds-sb-tags">{tags.join(" · ")}</div>
+                    {chosen ? "✓" : "+"}
+                  </button>
+                  <div className="ds-sb-body" onClick={() => setOpenSpell(open ? null : sp.id)}>
+                    <div className="ds-sb-line">
+                      <span className="ds-sb-name">{sp.name}</span>
+                      <span className="ds-sb-tags">{tags.join(" · ")}</span>
+                      {summary && <span className="ds-sb-summary">{summary}</span>}
+                    </div>
+                    {open && (
+                      <div className="ds-sb-detail">
+                        {meta && <div className="ds-sb-meta">{meta}</div>}
+                        <p>{sp.description}</p>
+                      </div>
+                    )}
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              );
+            })}
           </div>
         ))}
+        <p className="ds-muted" style={{ marginTop: 12 }}>
+          Tap + to add a spell; tap a row to see what it does. Attack and save spells also appear under Attacks above.
+        </p>
       </div>
     );
   };

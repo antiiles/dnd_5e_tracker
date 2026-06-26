@@ -54,6 +54,14 @@ Fields per entry in `public/content/spells/`:
 - `"classes": ["wizard", "sorcerer"]` — an empty array means available to all classes
   (safe default for incomplete data).
 - `"description"` — short plain-text summary.
+- `"action"` (optional) — combat mechanics that make a spell actionable. When present and
+  `type` is not `"none"`, the chosen spell renders as a computed card in the Attacks panel.
+  - `"type": "attack" | "save" | "heal" | "none"`.
+  - `"damage"` — base dice (e.g. `"8d6"`); `"damageType"` — e.g. `"fire"`.
+  - `"save"` — ability for save spells (e.g. `"dex"`).
+  - `"addSpellMod"` — add the caster's spell mod to damage/healing (e.g. Cure Wounds).
+  - `"cantripScaling": "dice" | "beams"` — cantrips only; scales at character level 5/11/17.
+  - Spells with no `action` (or `type: "none"`) stay reference-only in the Spellbook.
 
 ## Mechanic expandability principle
 
