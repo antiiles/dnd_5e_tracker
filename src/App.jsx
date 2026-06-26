@@ -68,6 +68,7 @@ const adaptClasses = (rows) =>
         caster: (c.spellcasting && c.spellcasting.type) || null,
         features: (c.features || []).map((f) => ({ level: f.level, name: f.name, desc: f.description })),
         resources: c.resources || [],
+        mechanics: c.mechanics || [],
       },
     ])
   );
@@ -81,21 +82,35 @@ const adaptInvocations = (rows) =>
 const adaptPatrons = (rows) => Object.fromEntries(rows.map((p) => [p.name, p.description]));
 const adaptPacts = (rows) => Object.fromEntries(rows.map((p) => [p.name, p.description]));
 
+const MECHANIC_ADAPTERS = {
+  invocations: adaptInvocations,
+  patrons: adaptPatrons,
+  pacts: adaptPacts,
+};
+
 // Load every content type and adapt into the constant shapes used in render.
 async function loadContent() {
-  const types = ["races", "classes", "skills", "feats", "weapons", "invocations", "patrons", "pacts"];
-  const [races, classes, skills, feats, weapons, invocations, patrons, pacts] = await Promise.all(
-    types.map(loadContentType)
+  const [races, classes, skills, feats, weapons] = await Promise.all(
+    ["races", "classes", "skills", "feats", "weapons"].map(loadContentType)
   );
+
+  // Only fetch mechanic folders declared by at least one class
+  const neededMechanics = [...new Set(classes.flatMap((c) => c.mechanics || []))];
+  const mechanicData = Object.fromEntries(
+    await Promise.all(
+      neededMechanics.map(async (type) => [type, await loadContentType(type)])
+    )
+  );
+
   return {
     RACES: adaptRaces(races),
     CLASSES: adaptClasses(classes),
     SKILLS: adaptSkills(skills),
     FEATS: adaptFeats(feats),
     WEAPONS: adaptWeapons(weapons),
-    INVOCATIONS: adaptInvocations(invocations),
-    PATRONS: adaptPatrons(patrons),
-    PACTS: adaptPacts(pacts),
+    INVOCATIONS: MECHANIC_ADAPTERS.invocations(mechanicData.invocations || []),
+    PATRONS: MECHANIC_ADAPTERS.patrons(mechanicData.patrons || []),
+    PACTS: MECHANIC_ADAPTERS.pacts(mechanicData.pacts || []),
   };
 }
 
@@ -746,7 +761,7 @@ export default function App() {
   const classFeatures = classDef
     ? classDef.features.filter((f) => f.level <= charLevel)
     : [];
-  const isWarlock = activeClassId === "warlock";
+  const classMechanics = classDef?.mechanics || [];
   const lvlClamped = Math.max(1, Math.min(20, charLevel));
   const resourceMax = (r) => {
     const m = r.max;
@@ -2095,7 +2110,7 @@ export default function App() {
           ))}
         </div>
       )}
-      {isWarlock && (
+      {(classMechanics.includes("patrons") || classMechanics.includes("pacts")) && (
         <div className="ds-panel">
           <div className="ds-panel-title">Patron & Pact</div>
           <div className="ds-id-row" style={{ marginTop: 0 }}>
@@ -2139,7 +2154,7 @@ export default function App() {
           )}
         </div>
       )}
-      {isWarlock && (
+      {classMechanics.includes("invocations") && (
         <div className="ds-panel">
           <div className="ds-panel-title">Eldritch Invocations</div>
           <p className="ds-auto-note">

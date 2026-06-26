@@ -5,10 +5,10 @@ in [docs/CODEMAP.md](docs/CODEMAP.md). Each item below is a self-contained sessi
 
 ## Current state vs. target
 
-Items 1–3 are done. **Remaining gaps vs ARCHITECTURE.md:**
+Items 1–4 are done. **Remaining gaps vs ARCHITECTURE.md:**
 
-- **Adapters still partially flatten content.** `adaptClasses` now includes `resources` but still
-  drops `mechanics` and `subclasses` — consumed by items 4–5.
+- **Adapters still partially flatten content.** `adaptClasses` now includes `resources` and
+  `mechanics` but still drops `subclasses` — consumed by item 5.
 - Classes are now keyed by `id` in the adapted map (matching the JSON files). Races/feats/etc. are
   still keyed by `name` (no change needed yet).
 
@@ -31,7 +31,7 @@ Read the `resources` array from the loaded class data and render the right compo
 - `toggle` — single used/available button
 Replace any hardcoded class-specific resource UI (warlock slots aside — that's spellcasting).
 
-## 4. Class mechanics dynamic loading
+## 4. Class mechanics dynamic loading ✅ done
 Read the `mechanics` array from the active class (`["invocations", "patrons", "pacts"]` etc.) and conditionally fetch and display the matching content sections. Sections that aren't in the class's `mechanics` list should not appear.
 
 ## 5. Spell system
