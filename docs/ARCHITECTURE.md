@@ -67,6 +67,12 @@ Fields per entry in `public/content/spells/`:
   - `"save"` — ability for save spells (e.g. `"dex"`).
   - `"addSpellMod"` — add the caster's spell mod to damage/healing (e.g. Cure Wounds).
   - `"cantripScaling": "dice" | "beams"` — cantrips only; scales at character level 5/11/17.
+  - `"higherLevel"` — leveled spells only; dice added **per slot level above base** when upcast
+    (e.g. Fireball `"1d6"`, Cure Wounds `"1d8"`). The Attacks card shows a slot selector and
+    recomputes damage; warlocks default to their pact slot. Same-die scaling merges counts
+    (`8d6` → `10d6`); mixed dice append a term.
+  - `"higherLevelNote"` — leveled spells only; free-text for non-dice upcasting (extra targets,
+    etc.) that the auto-math can't express; shown in the card's effects.
   - Spells with no `action` (or `type: "none"`) stay reference-only in the Spellbook.
 
 ## Mechanic expandability principle

@@ -58,12 +58,19 @@ load migration converts any stored `eldritchBlast` attack row into a `spells` en
 ## 5b. Warlock Mystic Arcanum
 At level 11+ warlocks gain once-per-long-rest castings of 6th–9th-level spells (one spell per tier, gained at levels 11/13/15/17) that don't use spell slots. The spellbook's pool filter caps at the highest slot level (`max > 0`), so Mystic Arcanum spells would be invisible. Model as a set of per-spell `toggle` resources keyed by level (e.g. `arcanum-6`, `arcanum-7`) rather than slots — closest to the existing class-resource `toggle` displayType. Separate from item 5 to keep scope bounded.
 
-## 5d. Leveled-spell upcasting
-Cantrip scaling (by character level, at 5/11/17) is done. Upcasting — casting a *leveled* spell with a higher-level slot for more effect (Fireball in a 4th-level slot = 9d6, +1 Magic Missile dart per slot above 1st, etc.) — is not. Plan:
-- Add a `higherLevel` field to the spell `action` block (e.g. `"higherLevel": "1d6"` damage per slot above base; some spells scale by targets/other, so allow a free-text note too).
-- In the derived attack card (`computeSpellCard`/`spellToAttack`), add a per-spell slot-level selector (base level → highest available slot with `max > 0`) and recompute damage = base + `higherLevel` × (chosenSlot − baseLevel).
-- Warlocks always cast at their pact level, so default the selector to the pact slot for them.
-- Keep it data-driven: a new upcasting spell = JSON only.
+## 5d. Leveled-spell upcasting ✅ done
+Cantrip scaling (by character level, at 5/11/17) was already done; this added **upcasting** of *leveled*
+spells (Fireball in a 5th-level slot = 10d6, etc.).
+- Spell `action` gained `higherLevel` (dice per slot above base) + `higherLevelNote` (free-text for
+  target/other scaling the math can't express). Adapter passes `action` through verbatim — JSON-only.
+- `addDicePerLevel` helper + a `castLevel` param threaded through `spellToAttack`/`computeSpellCard`.
+- The derived Attacks card shows a "Cast at slot" selector (levels ≥ base with `max > 0`); the choice
+  is ephemeral (`castLevels` state, not persisted). Warlocks default to their pact slot.
+- Known limitation: per-level *flat dice* scaling only. Target-count scaling (Magic Missile darts,
+  Scorching Ray) relies on `higherLevelNote`/description text, damage stays at base.
+- Seeded `higherLevel` on the flat-scaling SRD damage/heal spells (Fireball, Cure Wounds, Burning
+  Hands, Thunderwave, Shatter, Moonbeam, Lightning Bolt, Spirit Guardians, Healing/Mass Healing Word,
+  Flame Strike).
 
 ## 7. Mobile UI audit
 Run the app on a real mobile viewport (or DevTools). Fix layout issues: tap targets too small, horizontal overflow, inputs hard to use on touch. The existing CSS was not designed for mobile.

@@ -708,6 +708,7 @@ export default function App() {
   const [importBuf, setImportBuf] = useState("");
   const [content, setContent] = useState(null); // SRD content loaded from public/content/
   const [openSpell, setOpenSpell] = useState(null); // spellbook row expanded for details
+  const [castLevels, setCastLevels] = useState({}); // { [spellId]: chosen upcast slot level } (ephemeral)
   const [showContent, setShowContent] = useState(false); // homebrew content modal
   const [contentType, setContentType] = useState("spells"); // selected type in that modal
   const [contentBuf, setContentBuf] = useState(""); // paste buffer for homebrew JSON
@@ -1090,39 +1091,55 @@ export default function App() {
     if (!m || factor <= 1) return dice || "";
     return `${parseInt(m[1], 10) * factor}d${m[2]}`;
   };
+  // Upcasting: add `perLevel` dice for each slot level a leveled spell is cast above its base.
+  const addDicePerLevel = (base, perLevel, extraLevels) => {
+    if (extraLevels <= 0 || !perLevel) return base || "";
+    const b = /^(\d+)d(\d+)$/.exec(String(base || "").trim());
+    const h = /^(\d+)d(\d+)$/.exec(String(perLevel).trim());
+    if (!b || !h) return base || "";
+    const addN = parseInt(h[1], 10) * extraLevels;
+    if (h[2] === b[2]) return `${parseInt(b[1], 10) + addN}d${b[2]}`; // same die: merge counts
+    return `${base} + ${addN}d${h[2]}`; // mixed dice: append as a second term
+  };
   const spellAbilityKey = active.spellAbility || (classDef && classDef.spellAbility) || "cha";
   // Map a chosen spell into the attack shape computeAttack consumes (attack/save only).
-  const spellToAttack = (spell) => {
+  const spellToAttack = (spell, castLevel) => {
     if (spell.id === "eldritch-blast") {
       return { id: spell.id, kind: "spell", name: spell.name, eldritchBlast: true,
         dice: "1d10", damageType: "force", addMod: false, magic: 0, bonusDmg: 0, effect: "" };
     }
     const act = spell.action || {};
     const factor = spell.level === 0 && act.cantripScaling === "dice" ? cantripMult(charLevel) : 1;
+    const lvl = castLevel || spell.level;
+    const extra = spell.level >= 1 && lvl > spell.level ? lvl - spell.level : 0;
     return {
       id: spell.id, kind: "spell", name: spell.name,
       mode: act.type === "save" ? "save" : "attack",
       saveAbility: act.save || "dex",
-      dice: scaleDice(act.damage, factor),
+      dice: addDicePerLevel(scaleDice(act.damage, factor), act.higherLevel, extra),
       damageType: act.damageType || "",
       addMod: !!act.addSpellMod, magic: 0, bonusDmg: 0, effect: "",
     };
   };
   // Result object (same shape as computeAttack) for any actionable spell, incl. healing.
-  const computeSpellCard = (spell) => {
+  const computeSpellCard = (spell, castLevel) => {
     const act = spell.action || {};
+    const lvl = castLevel || spell.level;
+    const extra = spell.level >= 1 && lvl > spell.level ? lvl - spell.level : 0;
+    const effects = spell.description ? [spell.description] : [];
+    if (act.higherLevelNote) effects.push(act.higherLevelNote);
     if (act.type === "heal") {
       const smod = mods[spellAbilityKey];
       const factor = spell.level === 0 && act.cantripScaling === "dice" ? cantripMult(charLevel) : 1;
-      const dice = scaleDice(act.damage, factor);
+      const dice = addDicePerLevel(scaleDice(act.damage, factor), act.higherLevel, extra);
       const flat = act.addSpellMod ? smod : 0;
       const parts = dice ? [dice] : [];
       if (act.addSpellMod) parts.push(`${spellAbilityKey.toUpperCase()} ${fmtMod(smod)}`);
       const amount = `${dice}${flat ? fmtFlat(flat) : ""}`.trim() || "—";
-      return { heal: amount, healParts: parts, effects: spell.description ? [spell.description] : [] };
+      return { heal: amount, healParts: parts, effects };
     }
-    const r = computeAttack(spellToAttack(spell));
-    return { ...r, effects: spell.description ? [spell.description] : [] };
+    const r = computeAttack(spellToAttack(spell, lvl));
+    return { ...r, effects };
   };
   // Short one-line summary of a spell's mechanics (for the spellbook list).
   const spellSummary = (spell) => {
@@ -2106,14 +2123,39 @@ export default function App() {
           <div className="ds-spell-actions">
             <div className="ds-sub-label">From spellbook</div>
             {spellActions.map((spell) => {
-              const r = computeSpellCard(spell);
-              const lvl = spell.level === 0 ? "cantrip" : `level ${spell.level}`;
+              const act = spell.action || {};
+              const baseLvl = spell.level;
+              // Slot levels at or above the spell's base level that the character actually has.
+              const slotOptions = baseLvl >= 1
+                ? SPELL_LEVELS.filter((l) => l >= baseLvl && active.spellSlots[l] && active.spellSlots[l].max > 0)
+                : [];
+              // Warlocks always cast at their (single) pact slot; everyone else defaults to base.
+              const defaultLvl = activeClassId === "warlock" && slotOptions.length
+                ? slotOptions[slotOptions.length - 1]
+                : baseLvl;
+              const picked = castLevels[spell.id];
+              const castLevel = picked != null && slotOptions.includes(picked) ? picked : defaultLvl;
+              const showSelector = (act.higherLevel || act.higherLevelNote) && slotOptions.length > 1;
+              const r = computeSpellCard(spell, castLevel);
+              const lvl = baseLvl === 0 ? "cantrip" : castLevel > baseLvl ? `cast at level ${castLevel}` : `level ${baseLvl}`;
               return (
                 <div className="ds-atk ds-atk-derived" key={`sp-${spell.id}`}>
                   <div className="ds-atk-top">
                     <span className="ds-atk-name-static">{spell.name}</span>
                     <span className="ds-atk-kind">spell · {lvl}</span>
                   </div>
+                  {showSelector && (
+                    <div className="ds-atk-ctl">
+                      <div className="ds-mini">
+                        <label>Cast at slot</label>
+                        <select value={castLevel} onChange={(e) => setCastLevels((m) => ({ ...m, [spell.id]: num(e.target.value) }))}>
+                          {slotOptions.map((l) => (
+                            <option key={l} value={l}>Level {l}{l === baseLvl ? " (base)" : ""}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )}
                   <div className="ds-atk-result">
                     <div className="ds-atk-stat">
                       <div className="lab">{r.heal ? "Healing" : r.save ? "Spell save DC" : r.perBeam ? "To hit (each beam)" : "To hit"}</div>
