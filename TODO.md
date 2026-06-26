@@ -56,6 +56,13 @@ load migration converts any stored `eldritchBlast` attack row into a `spells` en
 ## 5b. Warlock Mystic Arcanum
 At level 11+ warlocks gain once-per-long-rest castings of 6th–9th-level spells (one spell per tier, gained at levels 11/13/15/17) that don't use spell slots. The spellbook's pool filter caps at the highest slot level (`max > 0`), so Mystic Arcanum spells would be invisible. Model as a set of per-spell `toggle` resources keyed by level (e.g. `arcanum-6`, `arcanum-7`) rather than slots — closest to the existing class-resource `toggle` displayType. Separate from item 5 to keep scope bounded.
 
+## 5d. Leveled-spell upcasting
+Cantrip scaling (by character level, at 5/11/17) is done. Upcasting — casting a *leveled* spell with a higher-level slot for more effect (Fireball in a 4th-level slot = 9d6, +1 Magic Missile dart per slot above 1st, etc.) — is not. Plan:
+- Add a `higherLevel` field to the spell `action` block (e.g. `"higherLevel": "1d6"` damage per slot above base; some spells scale by targets/other, so allow a free-text note too).
+- In the derived attack card (`computeSpellCard`/`spellToAttack`), add a per-spell slot-level selector (base level → highest available slot with `max > 0`) and recompute damage = base + `higherLevel` × (chosenSlot − baseLevel).
+- Warlocks always cast at their pact level, so default the selector to the pact slot for them.
+- Keep it data-driven: a new upcasting spell = JSON only.
+
 ## 7. Mobile UI audit
 Run the app on a real mobile viewport (or DevTools). Fix layout issues: tap targets too small, horizontal overflow, inputs hard to use on touch. The existing CSS was not designed for mobile.
 
