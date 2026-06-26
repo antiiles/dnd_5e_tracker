@@ -63,3 +63,9 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+## Project docs
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — locked design decisions (read before schema/mechanic work).
+- [docs/CODEMAP.md](docs/CODEMAP.md) — where code lives + how to run. Start here before reading `src/App.jsx`.
+- [TODO.md](TODO.md) — outstanding work and current-state-vs-target gaps.

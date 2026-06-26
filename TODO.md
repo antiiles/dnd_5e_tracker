@@ -1,6 +1,19 @@
 # D&D 5e Tracker — outstanding work
 
-Architecture decisions are documented in memory. Each item below is a self-contained session.
+Architecture decisions are documented in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); code layout
+in [docs/CODEMAP.md](docs/CODEMAP.md). Each item below is a self-contained session.
+
+## Current state vs. target
+
+Item 1 is done: content loads from JSON. **But the rest of the app is still the pre-JSON shape**, so
+don't assume ARCHITECTURE.md reflects the running code yet:
+
+- **Character schema is still legacy** (`cls` + `level`, `hitDice: { cur, max, die }`, no
+  `concentration`). The target `classes: [{ id, level }]` array and friends are item 2.
+- **Adapters flatten content to legacy shapes.** `adaptClasses` only extracts `hitDie`, `saves`,
+  `spellAbility`, `caster`, `features` — it drops `resources`, `mechanics`, and `subclasses` from the
+  JSON. Those fields exist in the data but aren't consumed yet (items 3–5).
+- Content is keyed by `name` in the adapted maps even though files are keyed by `id`.
 
 ---
 
