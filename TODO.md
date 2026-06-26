@@ -5,7 +5,7 @@ in [docs/CODEMAP.md](docs/CODEMAP.md). Each item below is a self-contained sessi
 
 ## Current state vs. target
 
-Items 1–5 are done. **Remaining gaps vs ARCHITECTURE.md:**
+Items 1–6 are done. **Remaining gaps vs ARCHITECTURE.md:**
 
 - **Adapters still partially flatten content.** `adaptClasses` drops `subclasses` — deferred (no subclass UI yet).
 - Classes are now keyed by `id` in the adapted map (matching the JSON files). Races/feats/etc. are
@@ -39,13 +39,15 @@ Read the `mechanics` array from the active class (`["invocations", "patrons", "p
 - Support `learningType: "prepare" | "known"` — prepared casters get a daily prep UI, known casters get a fixed known list
 - When spells content is populated, filter the available list by `classes` field (`[]` = all classes)
 
-## 6. User content loading UI
-Build the interface for users to add their own content:
-- File picker + paste textarea per content type
-- Validate incoming JSON against the type's expected schema (basic check: array of objects with `id` and `name`)
-- Store in IndexedDB under a key per type
-- Merge with SRD content at load time (user IDs override SRD IDs)
-- Show loaded user files with option to remove
+## 6. User content loading UI ✅ done
+Built the "Content" modal (header button) for users to add their own content:
+- File picker + paste textarea, with a content-type selector covering all 9 folders.
+- `validateUserContent` checks for a non-empty array of objects each with a string `id` + `name`.
+- Stored in IndexedDB (db `dnd-content`, store `userContent`, one record per type holding named files)
+  via `getUserFiles`/`putUserFile`/`deleteUserFile`.
+- `loadContentType` merges user files after SRD, so a homebrew `id` overrides the SRD `id`; adding or
+  removing a file calls `reloadContent()` to re-run `loadContent()`.
+- Loaded files are listed per type with a remove (✕) button.
 
 ## 5c. Retire legacy Eldritch Blast attack path ✅ done
 The `+ Eldritch Blast` button and `addEldritchBlast` were removed; the spellbook is now the single

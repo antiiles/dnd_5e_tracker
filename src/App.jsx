@@ -23,6 +23,90 @@ const abilityMod = (score) => Math.floor((num(score, 10) - 10) / 2);
 const fmtMod = (n) => (n >= 0 ? `+${n}` : `${n}`);
 const profBonus = (level) => Math.ceil(num(level, 1) / 4) + 1; // 1–4:+2, 5–8:+3 ... 17–20:+6
 
+// Content types a user can extend, with display labels (for the homebrew UI).
+const CONTENT_TYPES = [
+  ["races", "Races"],
+  ["classes", "Classes"],
+  ["skills", "Skills"],
+  ["feats", "Feats"],
+  ["weapons", "Weapons"],
+  ["spells", "Spells"],
+  ["invocations", "Invocations"],
+  ["patrons", "Patrons"],
+  ["pacts", "Pacts"],
+];
+
+// ───────────────────────── User content (IndexedDB) ─────────────────────────
+// Homebrew lives in IndexedDB (db "dnd-content", store "userContent"), one record
+// per content type: { type, files: [{ name, addedAt, items: [...] }] }. It's merged
+// after SRD at load time, so a user id overrides the matching SRD id.
+const IDB_NAME = "dnd-content";
+const IDB_STORE = "userContent";
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === "undefined") return reject(new Error("IndexedDB unavailable"));
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE, { keyPath: "type" });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+const idbReq = (req) =>
+  new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+
+// All user files for one type ([] when none, or IndexedDB is unavailable).
+async function getUserFiles(type) {
+  try {
+    const db = await idbOpen();
+    const rec = await idbReq(db.transaction(IDB_STORE, "readonly").objectStore(IDB_STORE).get(type));
+    db.close();
+    return rec && Array.isArray(rec.files) ? rec.files : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+// Add or replace (by name) one user file under a type. Read and write use separate
+// transactions so we never touch a transaction that has gone inactive across an await.
+async function putUserFile(type, name, items) {
+  const files = (await getUserFiles(type)).filter((f) => f.name !== name);
+  files.push({ name, addedAt: Date.now(), items });
+  const db = await idbOpen();
+  await idbReq(db.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).put({ type, files }));
+  db.close();
+}
+
+// Remove one user file (by name) from a type.
+async function deleteUserFile(type, name) {
+  const files = (await getUserFiles(type)).filter((f) => f.name !== name);
+  const db = await idbOpen();
+  await idbReq(db.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).put({ type, files }));
+  db.close();
+}
+
+// Basic schema check: a non-empty array of objects, each with a string id + name.
+function validateUserContent(parsed) {
+  if (!Array.isArray(parsed)) return { ok: false, error: "Expected a JSON array of entries." };
+  if (parsed.length === 0) return { ok: false, error: "That array is empty." };
+  for (const item of parsed) {
+    if (!item || typeof item !== "object" || Array.isArray(item))
+      return { ok: false, error: "Every entry must be an object." };
+    if (typeof item.id !== "string" || !item.id.trim())
+      return { ok: false, error: 'Every entry needs a non-empty "id".' };
+    if (typeof item.name !== "string" || !item.name.trim())
+      return { ok: false, error: 'Every entry needs a non-empty "name".' };
+  }
+  return { ok: true, count: parsed.length };
+}
+
 // ───────────────────────── Content loading ─────────────────────────
 // Fetch one content type's files from public/content/<type>/, merging by id
 // in index order (later files — user overrides — win on collision).
@@ -30,8 +114,11 @@ async function loadContentType(type) {
   const base = `${import.meta.env.BASE_URL}content/${type}`;
   const files = await fetch(`${base}/index.json`).then((r) => r.json());
   const arrays = await Promise.all(files.map((f) => fetch(`${base}/${f}`).then((r) => r.json())));
+  const userFiles = await getUserFiles(type);
   const byId = new Map();
   arrays.forEach((arr) => arr.forEach((item) => byId.set(item.id, item)));
+  // User content is applied last, so a homebrew id overrides the SRD id.
+  userFiles.forEach((f) => (f.items || []).forEach((item) => byId.set(item.id, item)));
   return [...byId.values()];
 }
 
@@ -602,6 +689,11 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 .ds-chkbox{width:20px;height:20px;border-radius:6px;border:1px solid ${T.line};background:${T.ink2};
   display:flex;align-items:center;justify-content:center;color:${T.gold};font-size:13px;}
 .ds-chkbox[data-on="1"]{border-color:${T.gold};background:rgba(216,180,90,0.14);}
+
+.ds-userfile{display:flex;align-items:center;gap:8px;border:1px solid ${T.line};border-radius:8px;
+  padding:7px 10px;margin-bottom:6px;background:${T.ink2};}
+.ds-userfile-name{flex:1;font-size:13px;word-break:break-all;}
+.ds-userfile-count{font-size:11px;color:${T.faint};white-space:nowrap;}
 `;
 
 // ───────────────────────── App ─────────────────────────
@@ -616,6 +708,10 @@ export default function App() {
   const [importBuf, setImportBuf] = useState("");
   const [content, setContent] = useState(null); // SRD content loaded from public/content/
   const [openSpell, setOpenSpell] = useState(null); // spellbook row expanded for details
+  const [showContent, setShowContent] = useState(false); // homebrew content modal
+  const [contentType, setContentType] = useState("spells"); // selected type in that modal
+  const [contentBuf, setContentBuf] = useState(""); // paste buffer for homebrew JSON
+  const [userFiles, setUserFiles] = useState({}); // { [type]: files[] } shown in the modal
 
   const flash = (text) => setToast({ text, id: Math.random() });
 
@@ -1389,6 +1485,66 @@ export default function App() {
     e.target.value = ""; // allow re-importing the same file
   };
 
+  // ── homebrew content ──
+  const contentLabel = (type) => (CONTENT_TYPES.find(([t]) => t === type) || [, type])[1];
+  const reloadContent = async () => {
+    try {
+      setContent(await loadContent());
+    } catch (e) {
+      console.error("Content reload failed", e);
+    }
+  };
+  const refreshUserFiles = async () => {
+    const entries = await Promise.all(CONTENT_TYPES.map(async ([t]) => [t, await getUserFiles(t)]));
+    setUserFiles(Object.fromEntries(entries));
+  };
+  const openContent = () => {
+    setShowContent(true);
+    refreshUserFiles();
+  };
+  const addUserContent = async (name, text) => {
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      flash("That doesn't look like valid JSON.");
+      return;
+    }
+    const res = validateUserContent(parsed);
+    if (!res.ok) {
+      flash(res.error);
+      return;
+    }
+    try {
+      await putUserFile(contentType, name, parsed);
+      await reloadContent();
+      await refreshUserFiles();
+      setContentBuf("");
+      flash(`Added ${res.count} entr${res.count === 1 ? "y" : "ies"} to ${contentLabel(contentType)}.`);
+    } catch (e) {
+      flash("Couldn't save — storage isn't available here.");
+    }
+  };
+  const onContentFile = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => addUserContent(file.name, String(reader.result));
+    reader.onerror = () => flash("Couldn't read that file.");
+    reader.readAsText(file);
+    e.target.value = ""; // allow re-adding the same file
+  };
+  const removeUserContent = async (type, name) => {
+    try {
+      await deleteUserFile(type, name);
+      await reloadContent();
+      await refreshUserFiles();
+      flash(`Removed ${name}.`);
+    } catch (e) {
+      flash("Couldn't remove that file.");
+    }
+  };
+
   // ── render helpers ──
   const Field = (label, value, onChange, props = {}) => (
     <div className="ds-field" key={label}>
@@ -1433,6 +1589,9 @@ export default function App() {
         </button>
         <button className="ds-btn ds-btn-ghost" onClick={() => setShowData(true)} title="Save, export & import">
           Backup
+        </button>
+        <button className="ds-btn ds-btn-ghost" onClick={openContent} title="Add your own content">
+          Content
         </button>
         <button className="ds-btn ds-btn-ghost ds-btn-danger" onClick={deleteCharacter} title="Delete">
           Delete
@@ -2749,6 +2908,100 @@ export default function App() {
               <p className="ds-muted" style={{ marginTop: 8 }}>
                 Imports are added as new characters — they never overwrite your existing ones.
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+      {showContent && (
+        <div className="ds-modal-bg" onClick={() => setShowContent(false)}>
+          <div className="ds-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="ds-modal-head">
+              <div className="ds-panel-title" style={{ margin: 0 }}>
+                Your content
+              </div>
+              <button className="ds-icon-btn" onClick={() => setShowContent(false)} aria-label="Close">
+                ✕
+              </button>
+            </div>
+            <p className="ds-muted">
+              Add homebrew as JSON — an array of entries, each with an <code>id</code> and{" "}
+              <code>name</code>. An entry overrides built-in content when it shares an id. Stored in this
+              browser only.
+            </p>
+            {typeof indexedDB === "undefined" && (
+              <p className="ds-muted" style={{ color: T.violet }}>
+                Storage isn't available here, so additions will only last for this session.
+              </p>
+            )}
+
+            <div className="ds-modal-sec">
+              <div className="ds-sec-label">Add content</div>
+              <div className="ds-field">
+                <label>Content type</label>
+                <select className="ds-select" value={contentType} onChange={(e) => setContentType(e.target.value)}>
+                  {CONTENT_TYPES.map(([t, label]) => (
+                    <option key={t} value={t}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <label className="ds-btn ds-btn-gold" style={{ marginTop: 10 }}>
+                Choose a .json file
+                <input
+                  type="file"
+                  accept="application/json,.json"
+                  style={{ display: "none" }}
+                  onChange={onContentFile}
+                />
+              </label>
+              <p className="ds-muted" style={{ margin: "12px 0 6px" }}>
+                …or paste JSON:
+              </p>
+              <textarea
+                className="ds-textarea"
+                style={{ minHeight: 110, fontSize: 12 }}
+                value={contentBuf}
+                placeholder={'[{"id":"my-spell","name":"My Spell", ...}]'}
+                onChange={(e) => setContentBuf(e.target.value)}
+              />
+              <button
+                className="ds-btn ds-btn-gold"
+                style={{ marginTop: 8 }}
+                onClick={() => addUserContent(`pasted-${uid()}.json`, contentBuf)}
+              >
+                Add from text
+              </button>
+            </div>
+
+            <div className="ds-modal-sec">
+              <div className="ds-sec-label">Loaded files</div>
+              {CONTENT_TYPES.every(([t]) => !(userFiles[t] && userFiles[t].length)) ? (
+                <p className="ds-muted">No homebrew loaded yet.</p>
+              ) : (
+                CONTENT_TYPES.map(([t, label]) => {
+                  const files = userFiles[t] || [];
+                  if (!files.length) return null;
+                  return (
+                    <div key={t} style={{ marginBottom: 10 }}>
+                      <div className="ds-muted" style={{ fontSize: 12, marginBottom: 4 }}>
+                        {label}
+                      </div>
+                      {files.map((f) => (
+                        <div className="ds-userfile" key={f.name}>
+                          <span className="ds-userfile-name">{f.name}</span>
+                          <span className="ds-userfile-count">
+                            {(f.items || []).length} entr{(f.items || []).length === 1 ? "y" : "ies"}
+                          </span>
+                          <button className="ds-icon-btn" onClick={() => removeUserContent(t, f.name)} aria-label="Remove">
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
