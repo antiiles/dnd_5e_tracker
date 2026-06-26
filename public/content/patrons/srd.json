@@ -1,0 +1,10 @@
+[
+  { "id": "archfey", "name": "Archfey", "description": "A lord or lady of the Feywild; charm, illusion, and fey teleportation." },
+  { "id": "the-fiend", "name": "The Fiend", "description": "A devil or demon; temporary HP on kills, fire, and dark resilience." },
+  { "id": "great-old-one", "name": "Great Old One", "description": "An alien intelligence; telepathy, psychic spells, and creeping madness." },
+  { "id": "the-celestial", "name": "The Celestial", "description": "A being of the upper planes; radiant power and healing light." },
+  { "id": "the-hexblade", "name": "The Hexblade", "description": "A sentient weapon of the Shadowfell; curses and martial might." },
+  { "id": "the-fathomless", "name": "The Fathomless", "description": "A power of the deep; grasping tentacles, cold, and aquatic magic." },
+  { "id": "the-genie", "name": "The Genie", "description": "A noble genie; elemental damage and a sheltering magical vessel." },
+  { "id": "the-undead", "name": "The Undead", "description": "An undead horror; frightening presence and necrotic endurance." }
+]

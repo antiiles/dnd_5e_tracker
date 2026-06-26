@@ -1,0 +1,105 @@
+[
+  {
+    "id": "dwarf", "name": "Dwarf", "speed": 25, "size": "Medium",
+    "abilityBonuses": { "con": 2 },
+    "traits": [
+      { "name": "Darkvision", "description": "See in dim light within 60 ft as if bright, and darkness as dim (grayscale)." },
+      { "name": "Dwarven Resilience", "description": "Advantage on saves vs poison; resistance to poison damage." },
+      { "name": "Dwarven Combat Training", "description": "Proficiency with battleaxe, handaxe, light hammer, warhammer." },
+      { "name": "Stonecunning", "description": "Double proficiency on History checks about stonework." },
+      { "name": "Tool Proficiency", "description": "Proficiency with one set of artisan's tools (smith, brewer, or mason)." }
+    ],
+    "subraces": [
+      { "id": "hill-dwarf", "name": "Hill Dwarf", "abilityBonuses": { "wis": 1 }, "traits": [{ "name": "Dwarven Toughness", "description": "Max HP increases by 1 per level." }] },
+      { "id": "mountain-dwarf", "name": "Mountain Dwarf", "abilityBonuses": { "str": 2 }, "traits": [{ "name": "Dwarven Armor Training", "description": "Proficiency with light and medium armor." }] }
+    ]
+  },
+  {
+    "id": "elf", "name": "Elf", "speed": 30, "size": "Medium",
+    "abilityBonuses": { "dex": 2 },
+    "traits": [
+      { "name": "Darkvision", "description": "See 60 ft in dim light as bright, darkness as dim." },
+      { "name": "Keen Senses", "description": "Proficiency in the Perception skill." },
+      { "name": "Fey Ancestry", "description": "Advantage vs being charmed; magic can't put you to sleep." },
+      { "name": "Trance", "description": "Meditate 4 hours for the benefit of an 8-hour rest." }
+    ],
+    "subraces": [
+      { "id": "high-elf", "name": "High Elf", "abilityBonuses": { "int": 1 }, "traits": [{ "name": "Cantrip", "description": "Know one wizard cantrip (Intelligence)." }, { "name": "Elf Weapon Training", "description": "Longsword, shortsword, shortbow, longbow." }, { "name": "Extra Language", "description": "Learn one extra language." }] },
+      { "id": "wood-elf", "name": "Wood Elf", "abilityBonuses": { "wis": 1 }, "speed": 35, "traits": [{ "name": "Elf Weapon Training", "description": "Longsword, shortsword, shortbow, longbow." }, { "name": "Fleet of Foot", "description": "Base walking speed 35 ft." }, { "name": "Mask of the Wild", "description": "Hide when lightly obscured by nature." }] },
+      { "id": "drow", "name": "Drow", "abilityBonuses": { "cha": 1 }, "traits": [{ "name": "Superior Darkvision", "description": "Darkvision out to 120 ft." }, { "name": "Sunlight Sensitivity", "description": "Disadvantage on attacks & Perception (sight) in sunlight." }, { "name": "Drow Magic", "description": "Dancing lights; faerie fire at 3rd, darkness at 5th (Charisma)." }, { "name": "Drow Weapon Training", "description": "Rapier, shortsword, hand crossbow." }] }
+    ]
+  },
+  {
+    "id": "halfling", "name": "Halfling", "speed": 25, "size": "Small",
+    "abilityBonuses": { "dex": 2 },
+    "traits": [
+      { "name": "Lucky", "description": "Reroll a natural 1 on an attack, check, or save (use the new roll)." },
+      { "name": "Brave", "description": "Advantage on saves vs being frightened." },
+      { "name": "Halfling Nimbleness", "description": "Move through the space of any creature larger than you." }
+    ],
+    "subraces": [
+      { "id": "lightfoot", "name": "Lightfoot", "abilityBonuses": { "cha": 1 }, "traits": [{ "name": "Naturally Stealthy", "description": "Hide when obscured by a creature at least one size larger." }] },
+      { "id": "stout", "name": "Stout", "abilityBonuses": { "con": 1 }, "traits": [{ "name": "Stout Resilience", "description": "Advantage vs poison; resistance to poison damage." }] }
+    ]
+  },
+  {
+    "id": "human", "name": "Human", "speed": 30, "size": "Medium",
+    "abilityBonuses": { "str": 1, "dex": 1, "con": 1, "int": 1, "wis": 1, "cha": 1 },
+    "traits": [{ "name": "Extra Language", "description": "Learn one extra language of your choice." }],
+    "subraces": []
+  },
+  {
+    "id": "dragonborn", "name": "Dragonborn", "speed": 30, "size": "Medium",
+    "abilityBonuses": { "str": 2, "cha": 1 },
+    "traits": [
+      { "name": "Draconic Ancestry", "description": "Choose a dragon type; sets your breath and resistance." },
+      { "name": "Breath Weapon", "description": "Exhale energy in a line/cone; DC 8 + CON + prof, scales with level." },
+      { "name": "Damage Resistance", "description": "Resistance to the damage type of your ancestry." }
+    ],
+    "subraces": []
+  },
+  {
+    "id": "gnome", "name": "Gnome", "speed": 25, "size": "Small",
+    "abilityBonuses": { "int": 2 },
+    "traits": [
+      { "name": "Darkvision", "description": "See 60 ft in dim light as bright, darkness as dim." },
+      { "name": "Gnome Cunning", "description": "Advantage on INT, WIS, CHA saves against magic." }
+    ],
+    "subraces": [
+      { "id": "rock-gnome", "name": "Rock Gnome", "abilityBonuses": { "con": 1 }, "traits": [{ "name": "Artificer's Lore", "description": "Add double proficiency on History checks about magic items / devices." }, { "name": "Tinker", "description": "Construct tiny clockwork devices." }] },
+      { "id": "forest-gnome", "name": "Forest Gnome", "abilityBonuses": { "dex": 1 }, "traits": [{ "name": "Natural Illusionist", "description": "Know the minor illusion cantrip (Intelligence)." }, { "name": "Speak with Small Beasts", "description": "Communicate simple ideas to Small or smaller beasts." }] }
+    ]
+  },
+  {
+    "id": "half-elf", "name": "Half-Elf", "speed": 30, "size": "Medium",
+    "abilityBonuses": { "cha": 2 },
+    "traits": [
+      { "name": "Darkvision", "description": "See 60 ft in dim light as bright, darkness as dim." },
+      { "name": "Fey Ancestry", "description": "Advantage vs charm; magic can't put you to sleep." },
+      { "name": "Ability Choice", "description": "+1 to two other abilities of your choice (set those manually)." },
+      { "name": "Skill Versatility", "description": "Proficiency in two skills of your choice." }
+    ],
+    "subraces": []
+  },
+  {
+    "id": "half-orc", "name": "Half-Orc", "speed": 30, "size": "Medium",
+    "abilityBonuses": { "str": 2, "con": 1 },
+    "traits": [
+      { "name": "Darkvision", "description": "See 60 ft in dim light as bright, darkness as dim." },
+      { "name": "Menacing", "description": "Proficiency in Intimidation." },
+      { "name": "Relentless Endurance", "description": "Drop to 1 HP instead of 0 once per long rest." },
+      { "name": "Savage Attacks", "description": "Roll one extra weapon die on a melee critical hit." }
+    ],
+    "subraces": []
+  },
+  {
+    "id": "tiefling", "name": "Tiefling", "speed": 30, "size": "Medium",
+    "abilityBonuses": { "cha": 2, "int": 1 },
+    "traits": [
+      { "name": "Darkvision", "description": "See 60 ft in dim light as bright, darkness as dim." },
+      { "name": "Hellish Resistance", "description": "Resistance to fire damage." },
+      { "name": "Infernal Legacy", "description": "Thaumaturgy; hellish rebuke at 3rd, darkness at 5th (Charisma)." }
+    ],
+    "subraces": []
+  }
+]

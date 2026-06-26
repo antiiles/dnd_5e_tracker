@@ -1,0 +1,230 @@
+[
+  {
+    "id": "barbarian", "name": "Barbarian", "hitDie": "d12",
+    "savingThrows": ["str", "con"],
+    "spellcasting": null,
+    "resources": [
+      { "id": "rage", "name": "Rage", "recharge": "long-rest", "max": { "scalingTable": [2,2,3,3,3,4,4,4,4,4,4,5,5,5,5,5,6,6,6,6] }, "displayType": "pips" }
+    ],
+    "mechanics": [],
+    "features": [
+      { "level": 1, "name": "Rage", "description": "Bonus action: bonus melee damage, advantage on STR checks/saves, resistance to bludgeoning/piercing/slashing." },
+      { "level": 1, "name": "Unarmored Defense", "description": "While unarmored, AC = 10 + DEX mod + CON mod." },
+      { "level": 2, "name": "Reckless Attack", "description": "Gain advantage on STR melee attacks; attacks against you gain advantage until your next turn." },
+      { "level": 2, "name": "Danger Sense", "description": "Advantage on DEX saves against effects you can see." },
+      { "level": 3, "name": "Primal Path", "description": "Choose your barbarian subclass." },
+      { "level": 5, "name": "Extra Attack", "description": "Attack twice when you take the Attack action." },
+      { "level": 5, "name": "Fast Movement", "description": "+10 ft speed while not in heavy armor." },
+      { "level": 7, "name": "Feral Instinct", "description": "Advantage on initiative." },
+      { "level": 9, "name": "Brutal Critical", "description": "Roll extra weapon damage dice on a critical hit." },
+      { "level": 11, "name": "Relentless Rage", "description": "Drop to 1 HP instead of 0 with a CON save while raging." }
+    ],
+    "subclasses": []
+  },
+  {
+    "id": "bard", "name": "Bard", "hitDie": "d8",
+    "savingThrows": ["dex", "cha"],
+    "spellcasting": { "type": "full", "ability": "cha", "learningType": "known" },
+    "resources": [
+      { "id": "bardic-inspiration", "name": "Bardic Inspiration", "recharge": "long-rest", "max": { "scalingType": "cha-mod" }, "displayType": "pips" }
+    ],
+    "mechanics": [],
+    "features": [
+      { "level": 1, "name": "Spellcasting", "description": "Cast bard spells using Charisma." },
+      { "level": 1, "name": "Bardic Inspiration", "description": "Bonus action: give a creature a d6 to add to a roll (scales with level)." },
+      { "level": 2, "name": "Jack of All Trades", "description": "Add half proficiency to checks you aren't proficient in." },
+      { "level": 2, "name": "Song of Rest", "description": "Allies regain extra HP on a short rest." },
+      { "level": 3, "name": "Bard College", "description": "Choose your subclass." },
+      { "level": 3, "name": "Expertise", "description": "Double proficiency on two chosen skills." },
+      { "level": 5, "name": "Font of Inspiration", "description": "Regain Bardic Inspiration on a short or long rest." },
+      { "level": 6, "name": "Countercharm", "description": "Performance grants allies advantage vs frightened/charmed." },
+      { "level": 10, "name": "Magical Secrets", "description": "Learn spells from any class's list." }
+    ],
+    "subclasses": []
+  },
+  {
+    "id": "cleric", "name": "Cleric", "hitDie": "d8",
+    "savingThrows": ["wis", "cha"],
+    "spellcasting": { "type": "full", "ability": "wis", "learningType": "prepare" },
+    "resources": [
+      { "id": "channel-divinity", "name": "Channel Divinity", "recharge": "short-rest", "max": { "scalingTable": [0,1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2] }, "displayType": "pips" }
+    ],
+    "mechanics": [],
+    "features": [
+      { "level": 1, "name": "Spellcasting", "description": "Cast cleric spells using Wisdom." },
+      { "level": 1, "name": "Divine Domain", "description": "Choose your domain; grants extra spells and features." },
+      { "level": 2, "name": "Channel Divinity", "description": "Turn Undead plus a domain option (recharge on rest)." },
+      { "level": 5, "name": "Destroy Undead", "description": "Channel Divinity can destroy low-CR undead." },
+      { "level": 10, "name": "Divine Intervention", "description": "Call on your deity for aid." }
+    ],
+    "subclasses": []
+  },
+  {
+    "id": "druid", "name": "Druid", "hitDie": "d8",
+    "savingThrows": ["int", "wis"],
+    "spellcasting": { "type": "full", "ability": "wis", "learningType": "prepare" },
+    "resources": [
+      { "id": "wild-shape", "name": "Wild Shape", "recharge": "short-rest", "max": { "scalingTable": [0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2] }, "displayType": "pips" }
+    ],
+    "mechanics": [],
+    "features": [
+      { "level": 1, "name": "Druidic", "description": "You know the secret druid language." },
+      { "level": 1, "name": "Spellcasting", "description": "Cast druid spells using Wisdom." },
+      { "level": 2, "name": "Wild Shape", "description": "Transform into beasts you've seen (limits by level)." },
+      { "level": 2, "name": "Druid Circle", "description": "Choose your subclass." },
+      { "level": 18, "name": "Beast Spells", "description": "Cast with verbal/somatic components while in Wild Shape." },
+      { "level": 20, "name": "Archdruid", "description": "Unlimited Wild Shape uses." }
+    ],
+    "subclasses": []
+  },
+  {
+    "id": "fighter", "name": "Fighter", "hitDie": "d10",
+    "savingThrows": ["str", "con"],
+    "spellcasting": null,
+    "resources": [
+      { "id": "action-surge", "name": "Action Surge", "recharge": "short-rest", "max": { "scalingTable": [0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2,2] }, "displayType": "pips" },
+      { "id": "second-wind", "name": "Second Wind", "recharge": "short-rest", "max": { "scalingTable": [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1] }, "displayType": "toggle" }
+    ],
+    "mechanics": [],
+    "features": [
+      { "level": 1, "name": "Fighting Style", "description": "Adopt a combat specialty (e.g. Defense, Dueling, Archery)." },
+      { "level": 1, "name": "Second Wind", "description": "Bonus action: regain 1d10 + level HP (once per rest)." },
+      { "level": 2, "name": "Action Surge", "description": "Take one additional action on your turn (once per rest)." },
+      { "level": 3, "name": "Martial Archetype", "description": "Choose your subclass." },
+      { "level": 5, "name": "Extra Attack", "description": "Attack twice when you take the Attack action." },
+      { "level": 9, "name": "Indomitable", "description": "Reroll a failed saving throw (once per rest)." },
+      { "level": 11, "name": "Extra Attack (2)", "description": "Attack three times when you take the Attack action." }
+    ],
+    "subclasses": []
+  },
+  {
+    "id": "monk", "name": "Monk", "hitDie": "d8",
+    "savingThrows": ["str", "dex"],
+    "spellcasting": null,
+    "resources": [
+      { "id": "ki", "name": "Ki points", "recharge": "short-rest", "max": { "scalingType": "level" }, "displayType": "counter" }
+    ],
+    "mechanics": [],
+    "features": [
+      { "level": 1, "name": "Unarmored Defense", "description": "While unarmored, AC = 10 + DEX mod + WIS mod." },
+      { "level": 1, "name": "Martial Arts", "description": "Use DEX for unarmed strikes; bonus unarmed strike." },
+      { "level": 2, "name": "Ki", "description": "Spend ki points on Flurry of Blows, Patient Defense, Step of the Wind." },
+      { "level": 2, "name": "Unarmored Movement", "description": "+10 ft speed while unarmored (scales)." },
+      { "level": 3, "name": "Monastic Tradition", "description": "Choose your subclass; Deflect Missiles." },
+      { "level": 4, "name": "Slow Fall", "description": "Reduce falling damage as a reaction." },
+      { "level": 5, "name": "Extra Attack", "description": "Attack twice; Stunning Strike with ki." },
+      { "level": 7, "name": "Evasion", "description": "Take no damage on a successful DEX save (half on fail)." }
+    ],
+    "subclasses": []
+  },
+  {
+    "id": "paladin", "name": "Paladin", "hitDie": "d10",
+    "savingThrows": ["wis", "cha"],
+    "spellcasting": { "type": "half", "ability": "cha", "learningType": "prepare" },
+    "resources": [
+      { "id": "lay-on-hands", "name": "Lay on Hands", "recharge": "long-rest", "max": { "scalingTable": [5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100] }, "displayType": "counter" },
+      { "id": "channel-divinity", "name": "Channel Divinity", "recharge": "short-rest", "max": { "scalingTable": [0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1] }, "displayType": "pips" }
+    ],
+    "mechanics": [],
+    "features": [
+      { "level": 1, "name": "Divine Sense", "description": "Detect celestials, fiends, undead nearby." },
+      { "level": 1, "name": "Lay on Hands", "description": "Healing pool of 5 × paladin level HP." },
+      { "level": 2, "name": "Fighting Style", "description": "Adopt a combat specialty." },
+      { "level": 2, "name": "Spellcasting", "description": "Cast paladin spells using Charisma." },
+      { "level": 2, "name": "Divine Smite", "description": "Expend a spell slot to deal extra radiant damage on a hit." },
+      { "level": 3, "name": "Sacred Oath", "description": "Choose your oath (subclass); Channel Divinity; Divine Health." },
+      { "level": 5, "name": "Extra Attack", "description": "Attack twice when you take the Attack action." },
+      { "level": 6, "name": "Aura of Protection", "description": "You and nearby allies add your CHA mod to saves." }
+    ],
+    "subclasses": []
+  },
+  {
+    "id": "ranger", "name": "Ranger", "hitDie": "d10",
+    "savingThrows": ["str", "dex"],
+    "spellcasting": { "type": "half", "ability": "wis", "learningType": "known" },
+    "resources": [],
+    "mechanics": [],
+    "features": [
+      { "level": 1, "name": "Favored Enemy", "description": "Advantage to track and recall info about chosen foes." },
+      { "level": 1, "name": "Natural Explorer", "description": "Bonuses while traveling in favored terrain." },
+      { "level": 2, "name": "Fighting Style", "description": "Adopt a combat specialty." },
+      { "level": 2, "name": "Spellcasting", "description": "Cast ranger spells using Wisdom." },
+      { "level": 3, "name": "Ranger Archetype", "description": "Choose your subclass; Primeval Awareness." },
+      { "level": 5, "name": "Extra Attack", "description": "Attack twice when you take the Attack action." },
+      { "level": 8, "name": "Land's Stride", "description": "Move through nonmagical difficult terrain freely." }
+    ],
+    "subclasses": []
+  },
+  {
+    "id": "rogue", "name": "Rogue", "hitDie": "d8",
+    "savingThrows": ["dex", "int"],
+    "spellcasting": null,
+    "resources": [],
+    "mechanics": [],
+    "features": [
+      { "level": 1, "name": "Expertise", "description": "Double proficiency on two chosen skills (or one + thieves' tools)." },
+      { "level": 1, "name": "Sneak Attack", "description": "Extra damage once per turn with advantage or a flanking ally (scales)." },
+      { "level": 1, "name": "Thieves' Cant", "description": "Secret coded language of rogues." },
+      { "level": 2, "name": "Cunning Action", "description": "Bonus action to Dash, Disengage, or Hide." },
+      { "level": 3, "name": "Roguish Archetype", "description": "Choose your subclass." },
+      { "level": 5, "name": "Uncanny Dodge", "description": "Reaction to halve damage from one attack." },
+      { "level": 7, "name": "Evasion", "description": "Take no damage on a successful DEX save (half on fail)." },
+      { "level": 11, "name": "Reliable Talent", "description": "Treat a d20 of 9 or lower as 10 on proficient checks." }
+    ],
+    "subclasses": []
+  },
+  {
+    "id": "sorcerer", "name": "Sorcerer", "hitDie": "d6",
+    "savingThrows": ["con", "cha"],
+    "spellcasting": { "type": "full", "ability": "cha", "learningType": "known" },
+    "resources": [
+      { "id": "sorcery-points", "name": "Sorcery points", "recharge": "long-rest", "max": { "scalingType": "level" }, "displayType": "counter" }
+    ],
+    "mechanics": [],
+    "features": [
+      { "level": 1, "name": "Spellcasting", "description": "Cast sorcerer spells using Charisma." },
+      { "level": 1, "name": "Sorcerous Origin", "description": "Choose your subclass; grants extra features." },
+      { "level": 2, "name": "Font of Magic", "description": "Gain sorcery points to fuel your magic." },
+      { "level": 3, "name": "Metamagic", "description": "Bend spells with options like Twin, Quicken, Subtle." }
+    ],
+    "subclasses": []
+  },
+  {
+    "id": "warlock", "name": "Warlock", "hitDie": "d8",
+    "savingThrows": ["wis", "cha"],
+    "spellcasting": { "type": "warlock", "ability": "cha", "learningType": "known" },
+    "resources": [],
+    "mechanics": ["invocations", "patrons", "pacts"],
+    "features": [
+      { "level": 1, "name": "Otherworldly Patron", "description": "Choose your patron (subclass); grants expanded spells and features." },
+      { "level": 1, "name": "Pact Magic", "description": "A few spell slots that all rise to your highest level and recharge on a short rest." },
+      { "level": 2, "name": "Eldritch Invocations", "description": "Learn fragments of forbidden knowledge that grant lasting magical abilities." },
+      { "level": 3, "name": "Pact Boon", "description": "Choose Pact of the Blade, Chain, or Tome." },
+      { "level": 4, "name": "Ability Score Improvement", "description": "Increase one ability by 2 or two abilities by 1 (or take a feat)." },
+      { "level": 8, "name": "Ability Score Improvement", "description": "Increase one ability by 2 or two abilities by 1 (or take a feat)." },
+      { "level": 11, "name": "Mystic Arcanum (6th level)", "description": "Choose one 6th-level spell to cast once per long rest, without a slot." },
+      { "level": 12, "name": "Ability Score Improvement", "description": "Increase one ability by 2 or two abilities by 1 (or take a feat)." },
+      { "level": 13, "name": "Mystic Arcanum (7th level)", "description": "Choose one 7th-level spell to cast once per long rest." },
+      { "level": 15, "name": "Mystic Arcanum (8th level)", "description": "Choose one 8th-level spell to cast once per long rest." },
+      { "level": 16, "name": "Ability Score Improvement", "description": "Increase one ability by 2 or two abilities by 1 (or take a feat)." },
+      { "level": 17, "name": "Mystic Arcanum (9th level)", "description": "Choose one 9th-level spell to cast once per long rest." },
+      { "level": 19, "name": "Ability Score Improvement", "description": "Increase one ability by 2 or two abilities by 1 (or take a feat)." },
+      { "level": 20, "name": "Eldritch Master", "description": "Spend 1 minute entreating your patron to regain all expended Pact Magic slots, once per long rest." }
+    ],
+    "subclasses": []
+  },
+  {
+    "id": "wizard", "name": "Wizard", "hitDie": "d6",
+    "savingThrows": ["int", "wis"],
+    "spellcasting": { "type": "full", "ability": "int", "learningType": "prepare" },
+    "resources": [],
+    "mechanics": [],
+    "features": [
+      { "level": 1, "name": "Spellcasting", "description": "Cast wizard spells using Intelligence; keep a spellbook." },
+      { "level": 1, "name": "Arcane Recovery", "description": "Recover some spell slots on a short rest (once per day)." },
+      { "level": 2, "name": "Arcane Tradition", "description": "Choose your school of magic (subclass)." },
+      { "level": 18, "name": "Spell Mastery", "description": "Cast a chosen 1st- and 2nd-level spell at will." }
+    ],
+    "subclasses": []
+  }
+]

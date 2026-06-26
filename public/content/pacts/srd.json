@@ -1,0 +1,5 @@
+[
+  { "id": "pact-of-the-blade", "name": "Pact of the Blade", "description": "Conjure a magical pact weapon you're proficient with; bond magic weapons to it." },
+  { "id": "pact-of-the-chain", "name": "Pact of the Chain", "description": "Learn find familiar; your familiar can take special forms (imp, pseudodragon, quasit, sprite)." },
+  { "id": "pact-of-the-tome", "name": "Pact of the Tome", "description": "Gain a Book of Shadows holding three extra cantrips from any class." }
+]
