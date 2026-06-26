@@ -5,22 +5,20 @@ in [docs/CODEMAP.md](docs/CODEMAP.md). Each item below is a self-contained sessi
 
 ## Current state vs. target
 
-Item 1 is done: content loads from JSON. **But the rest of the app is still the pre-JSON shape**, so
-don't assume ARCHITECTURE.md reflects the running code yet:
+Items 1 and 2 are done. **Remaining gaps vs ARCHITECTURE.md:**
 
-- **Character schema is still legacy** (`cls` + `level`, `hitDice: { cur, max, die }`, no
-  `concentration`). The target `classes: [{ id, level }]` array and friends are item 2.
-- **Adapters flatten content to legacy shapes.** `adaptClasses` only extracts `hitDie`, `saves`,
-  `spellAbility`, `caster`, `features` — it drops `resources`, `mechanics`, and `subclasses` from the
+- **Adapters still flatten content.** `adaptClasses` extracts `hitDie`, `saves`, `spellAbility`,
+  `caster`, `features`, and `name` — it drops `resources`, `mechanics`, and `subclasses` from the
   JSON. Those fields exist in the data but aren't consumed yet (items 3–5).
-- Content is keyed by `name` in the adapted maps even though files are keyed by `id`.
+- Classes are now keyed by `id` in the adapted map (matching the JSON files). Races/feats/etc. are
+  still keyed by `name` (no change needed yet).
 
 ---
 
 ## 1. Wire content loading from JSON ✅ done
 Replace all hardcoded constants in `src/App.jsx` (`RACES`, `CLASSES`, `SKILLS`, `FEATS`, `WEAPONS`, `INVOCATIONS`, `PATRONS`, `PACTS`) with `fetch()` calls to `public/content/` using the `index.json` manifests. App should load each type's files on startup and merge them in ID order (SRD first, user overrides win on collision).
 
-## 2. Update character schema
+## 2. Update character schema ✅ done
 Migrate character state in `makeCharacter()` and `hydrateCharacter()` to the agreed shape:
 - `cls` + `level` → `classes: [{ id, level }]` (array from day one for future multiclass)
 - Add `concentration: { spellId, spellName } | null`

@@ -59,8 +59,9 @@ const adaptRaces = (rows) =>
 const adaptClasses = (rows) =>
   Object.fromEntries(
     rows.map((c) => [
-      c.name,
+      c.id,
       {
+        name: c.name,
         hitDie: c.hitDie,
         saves: c.savingThrows || [],
         spellAbility: (c.spellcasting && c.spellcasting.ability) || "",
@@ -181,8 +182,7 @@ function makeCharacter(name = "New Adventurer") {
   return {
     id: uid(),
     name,
-    cls: "",
-    level: 1,
+    classes: [{ id: "", level: 1 }],
     race: "",
     subrace: "",
     background: "",
@@ -196,7 +196,8 @@ function makeCharacter(name = "New Adventurer") {
     speed: 30,
     initMisc: 0,
     hp: { current: 10, max: 10, temp: 0 },
-    hitDice: { cur: 1, max: 1, die: "d8" },
+    hitDice: { total: 1, remaining: 1, dieType: 8 },
+    concentration: null,
     deathSaves: { s: 0, f: 0 },
     spellAbility: "",
     spellSlots,
@@ -229,7 +230,18 @@ function hydrateCharacter(raw) {
   c.skillProfs = { ...base.skillProfs, ...(raw.skillProfs || {}) };
   c.spellSlots = { ...base.spellSlots, ...(raw.spellSlots || {}) };
   c.hp = { ...base.hp, ...(raw.hp || {}) };
-  c.hitDice = { ...base.hitDice, ...(raw.hitDice || {}) };
+  // migrate legacy cls/level → classes array
+  if (!Array.isArray(c.classes) || c.classes.length === 0) {
+    c.classes = raw.cls ? [{ id: raw.cls.toLowerCase(), level: num(raw.level, 1) }] : base.classes;
+  }
+  // migrate legacy hitDice {cur,max,die} → {total,remaining,dieType}
+  if (raw.hitDice && ("cur" in raw.hitDice || "max" in raw.hitDice)) {
+    const dieType = parseInt(String(raw.hitDice.die || "d8").replace(/[^0-9]/g, ""), 10) || 8;
+    c.hitDice = { total: num(raw.hitDice.max, 1), remaining: num(raw.hitDice.cur, 1), dieType };
+  } else {
+    c.hitDice = { ...base.hitDice, ...(raw.hitDice || {}) };
+  }
+  if (c.concentration === undefined) c.concentration = null;
   c.deathSaves = { ...base.deathSaves, ...(raw.deathSaves || {}) };
   c.attacks = (Array.isArray(raw.attacks) ? raw.attacks : []).map(normalizeAttack).filter(Boolean);
   c.feats = Array.isArray(raw.feats) ? raw.feats : [];
@@ -580,8 +592,7 @@ export default function App() {
         const c = makeCharacter("Hilda Coalhand");
         c.race = "Dwarf";
         c.subrace = "Hill Dwarf";
-        c.cls = "Warlock";
-        c.level = 5;
+        c.classes = [{ id: "warlock", level: 5 }];
         c.abilities = { str: 10, dex: 10, con: 8, int: 8, wis: 10, cha: 18 };
         c.savingProfs = { str: false, dex: false, con: false, int: false, wis: true, cha: true };
         c.skillProfs = { ...c.skillProfs, arcana: 1, deception: 1, investigation: 1 };
@@ -591,7 +602,7 @@ export default function App() {
         c.ac = 13;
         c.speed = 25;
         c.hp = { current: 28, max: 28, temp: 0 };
-        c.hitDice = { cur: 5, max: 5, die: "d8" };
+        c.hitDice = { total: 5, remaining: 5, dieType: 8 };
         c.spellSlots = slotsFor("warlock", 5);
         c.invocations = ["Agonizing Blast", "Investment of the Chain Master"];
         c.attacks = [
@@ -704,7 +715,10 @@ export default function App() {
   };
 
   // ── derived ──
-  const pb = profBonus(active.level);
+  const activeClass = active.classes[0] || { id: "", level: 1 };
+  const activeClassId = activeClass.id;
+  const charLevel = num(activeClass.level, 1);
+  const pb = profBonus(charLevel);
   const raceMods = raceBonuses(active.race, active.subrace);
   const totalScore = {};
   const mods = {};
@@ -713,13 +727,13 @@ export default function App() {
     mods[k] = abilityMod(totalScore[k]);
   });
   const raceDef = RACES[active.race] || null;
-  const classDef = CLASSES[active.cls] || null;
+  const classDef = CLASSES[activeClassId] || null;
   const traitList = raceTraitList(active.race, active.subrace);
   const classFeatures = classDef
-    ? classDef.features.filter((f) => f.level <= num(active.level, 1))
+    ? classDef.features.filter((f) => f.level <= charLevel)
     : [];
-  const isWarlock = active.cls === "Warlock";
-  const lvlClamped = Math.max(1, Math.min(20, num(active.level, 1)));
+  const isWarlock = activeClassId === "warlock";
+  const lvlClamped = Math.max(1, Math.min(20, charLevel));
   const hasEldritchAdept = (active.feats || []).some((f) => (f.name || "").trim().toLowerCase() === "eldritch adept");
   const invKnownAllowed = (WARLOCK_INV_KNOWN[lvlClamped] || 0) + (hasEldritchAdept ? 1 : 0);
   const availableInvocations = INVOCATIONS.filter(
@@ -810,8 +824,7 @@ export default function App() {
       const smod = mods[sp];
       const magic = num(a.magic);
       if (a.eldritchBlast) {
-        const lvl = num(active.level, 1);
-        const beams = lvl >= 17 ? 4 : lvl >= 11 ? 3 : lvl >= 5 ? 2 : 1;
+        const beams = charLevel >= 17 ? 4 : charLevel >= 11 ? 3 : charLevel >= 5 ? 2 : 1;
         const ag = (active.invocations || []).includes("Agonizing Blast");
         const rep = (active.invocations || []).includes("Repelling Blast");
         const dmgFlat = (ag ? smod : 0) + num(a.bonusDmg);
@@ -899,24 +912,24 @@ export default function App() {
       return out;
     });
   };
-  const handleClassChange = (name) => {
-    const def = CLASSES[name];
+  const handleClassChange = (id) => {
+    const def = CLASSES[id];
     if (!def) {
-      patch({ cls: name });
+      patch((c) => ({ classes: [{ ...c.classes[0], id }] }));
       return;
     }
     const savingProfs = {};
     ABILITIES.forEach(([k]) => (savingProfs[k] = def.saves.includes(k)));
     patch((c) => {
+      const lvl = num(c.classes[0].level, 1);
       const out = {
-        cls: name,
+        classes: [{ id, level: lvl }],
         savingProfs,
         spellAbility: def.spellAbility || "",
-        hitDice: { ...c.hitDice, die: def.hitDie, max: num(c.level, 1), cur: num(c.level, 1) },
-        spellSlots: slotsFor(def.caster, c.level),
+        hitDice: { total: lvl, remaining: lvl, dieType: def.hitDie },
+        spellSlots: slotsFor(def.caster, lvl),
       };
-      if (name === "Warlock") {
-        const lvl = num(c.level, 1);
+      if (id === "warlock") {
         out.patron = c.patron || "Great Old One";
         out.pact = c.pact || (lvl >= 3 ? "Pact of the Chain" : "");
         if (!(c.invocations && c.invocations.length)) {
@@ -932,8 +945,11 @@ export default function App() {
   const handleLevelChange = (v) => {
     const level = Math.max(1, Math.min(20, num(v, 1)));
     patch((c) => {
-      const def = CLASSES[c.cls];
-      const out = { level, hitDice: { ...c.hitDice, max: level, cur: Math.min(num(c.hitDice.cur, level), level) } };
+      const def = CLASSES[c.classes[0].id];
+      const out = {
+        classes: [{ ...c.classes[0], level }],
+        hitDice: { ...c.hitDice, total: level, remaining: Math.min(num(c.hitDice.remaining, level), level) },
+      };
       if (def && def.caster) out.spellSlots = slotsFor(def.caster, level);
       return out;
     });
@@ -947,13 +963,13 @@ export default function App() {
         const s = c.spellSlots[l];
         spellSlots[l] = { max: s.max, cur: s.max };
       });
-      const maxHD = num(c.hitDice.max, 0);
+      const maxHD = num(c.hitDice.total, 0);
       const regain = Math.max(1, Math.floor(maxHD / 2));
-      const cur = Math.min(maxHD, num(c.hitDice.cur, 0) + regain);
+      const remaining = Math.min(maxHD, num(c.hitDice.remaining, 0) + regain);
       return {
         hp: { ...c.hp, current: num(c.hp.max, 0), temp: 0 },
         spellSlots,
-        hitDice: { ...c.hitDice, cur },
+        hitDice: { ...c.hitDice, remaining },
         deathSaves: { s: 0, f: 0 },
       };
     });
@@ -962,7 +978,7 @@ export default function App() {
   const shortRest = () => {
     const isWarlock = classDef && classDef.caster === "warlock";
     patch((c) => {
-      const def = CLASSES[c.cls];
+      const def = CLASSES[c.classes[0].id];
       if (!(def && def.caster === "warlock")) return {};
       const spellSlots = {};
       SPELL_LEVELS.forEach((l) => {
@@ -978,7 +994,7 @@ export default function App() {
     );
   };
   const spendHitDie = () => {
-    if (num(active.hitDice.cur, 0) <= 0) {
+    if (num(active.hitDice.remaining, 0) <= 0) {
       flash("No Hit Dice remaining.");
       return;
     }
@@ -986,14 +1002,14 @@ export default function App() {
       flash("Already at full HP.");
       return;
     }
-    const sides = parseInt(String(active.hitDice.die).replace(/[^0-9]/g, ""), 10) || 8;
+    const sides = num(active.hitDice.dieType, 8);
     const roll = Math.floor(Math.random() * sides) + 1;
     const heal = Math.max(0, roll + mods.con);
     patch((c) => ({
-      hitDice: { ...c.hitDice, cur: num(c.hitDice.cur, 0) - 1 },
+      hitDice: { ...c.hitDice, remaining: num(c.hitDice.remaining, 0) - 1 },
       hp: { ...c.hp, current: Math.min(num(c.hp.max, 0), num(c.hp.current, 0) + heal) },
     }));
-    flash(`Spent a ${active.hitDice.die}: rolled ${roll} ${fmtMod(mods.con)} CON = ${heal} HP healed.`);
+    flash(`Spent a d${active.hitDice.dieType}: rolled ${roll} ${fmtMod(mods.con)} CON = ${heal} HP healed.`);
   };
 
   // ── feats ──
@@ -1218,7 +1234,7 @@ export default function App() {
           {characters.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name || "Unnamed"}
-              {c.cls ? ` · ${c.cls} ${c.level}` : ` · Lv ${c.level}`}
+              {c.classes?.[0]?.id ? ` · ${CLASSES[c.classes[0].id]?.name || c.classes[0].id} ${c.classes[0].level}` : ` · Lv ${c.classes?.[0]?.level || 1}`}
             </option>
           ))}
         </select>
@@ -1269,11 +1285,11 @@ export default function App() {
         <div className="ds-id-row">
           <div className="ds-field">
             <label>Class</label>
-            <select className="ds-input" value={active.cls} onChange={(e) => handleClassChange(e.target.value)}>
+            <select className="ds-input" value={activeClassId} onChange={(e) => handleClassChange(e.target.value)}>
               <option value="">— choose —</option>
-              {Object.keys(CLASSES).map((n) => (
-                <option key={n} value={n}>
-                  {n}
+              {Object.entries(CLASSES).map(([id, def]) => (
+                <option key={id} value={id}>
+                  {def.name}
                 </option>
               ))}
             </select>
@@ -1282,7 +1298,7 @@ export default function App() {
             <label>Level</label>
             <input
               className="ds-input"
-              value={active.level}
+              value={charLevel}
               inputMode="numeric"
               onChange={(e) => handleLevelChange(e.target.value)}
             />
@@ -1426,23 +1442,23 @@ export default function App() {
             <input
               className="ds-input"
               style={{ width: 46 }}
-              value={active.hitDice.cur}
+              value={active.hitDice.remaining}
               inputMode="numeric"
-              onChange={(e) => patchObj("hitDice", "cur", num(e.target.value))}
+              onChange={(e) => patchObj("hitDice", "remaining", num(e.target.value))}
             />
             <span className="ds-muted">/</span>
             <input
               className="ds-input"
               style={{ width: 46 }}
-              value={active.hitDice.max}
+              value={active.hitDice.total}
               inputMode="numeric"
-              onChange={(e) => patchObj("hitDice", "max", num(e.target.value))}
+              onChange={(e) => patchObj("hitDice", "total", num(e.target.value))}
             />
             <input
               className="ds-input"
               style={{ width: 58 }}
-              value={active.hitDice.die}
-              onChange={(e) => patchObj("hitDice", "die", e.target.value)}
+              value={`d${active.hitDice.dieType}`}
+              onChange={(e) => patchObj("hitDice", "dieType", parseInt(String(e.target.value).replace(/[^0-9]/g, ""), 10) || 8)}
             />
             <button className="ds-btn" style={{ padding: "6px 10px" }} onClick={spendHitDie} title="Roll a Hit Die to heal">
               Spend
@@ -1963,7 +1979,7 @@ export default function App() {
       {classFeatures.length > 0 && (
         <div className="ds-panel">
           <div className="ds-panel-title">
-            {active.cls} features · level {num(active.level, 1)}
+            {classDef?.name} features · level {charLevel}
           </div>
           <p className="ds-auto-note">Shows the features you've gained so far. Summaries — check your sourcebook for full rules.</p>
           {classFeatures.map((f, i) => (
