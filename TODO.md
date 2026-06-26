@@ -4,7 +4,7 @@ Architecture decisions are documented in memory. Each item below is a self-conta
 
 ---
 
-## 1. Wire content loading from JSON
+## 1. Wire content loading from JSON ✅ done
 Replace all hardcoded constants in `src/App.jsx` (`RACES`, `CLASSES`, `SKILLS`, `FEATS`, `WEAPONS`, `INVOCATIONS`, `PATRONS`, `PACTS`) with `fetch()` calls to `public/content/` using the `index.json` manifests. App should load each type's files on startup and merge them in ID order (SRD first, user overrides win on collision).
 
 ## 2. Update character schema

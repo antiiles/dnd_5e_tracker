@@ -10,27 +10,6 @@ const ABILITIES = [
   ["cha", "Charisma", "CHA"],
 ];
 
-const SKILLS = [
-  ["acrobatics", "Acrobatics", "dex"],
-  ["animal", "Animal Handling", "wis"],
-  ["arcana", "Arcana", "int"],
-  ["athletics", "Athletics", "str"],
-  ["deception", "Deception", "cha"],
-  ["history", "History", "int"],
-  ["insight", "Insight", "wis"],
-  ["intimidation", "Intimidation", "cha"],
-  ["investigation", "Investigation", "int"],
-  ["medicine", "Medicine", "wis"],
-  ["nature", "Nature", "int"],
-  ["perception", "Perception", "wis"],
-  ["performance", "Performance", "cha"],
-  ["persuasion", "Persuasion", "cha"],
-  ["religion", "Religion", "int"],
-  ["sleight", "Sleight of Hand", "dex"],
-  ["stealth", "Stealth", "dex"],
-  ["survival", "Survival", "wis"],
-];
-
 const SPELL_LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
 // ───────────────────────── Helpers ─────────────────────────
@@ -44,259 +23,79 @@ const abilityMod = (score) => Math.floor((num(score, 10) - 10) / 2);
 const fmtMod = (n) => (n >= 0 ? `+${n}` : `${n}`);
 const profBonus = (level) => Math.ceil(num(level, 1) / 4) + 1; // 1–4:+2, 5–8:+3 ... 17–20:+6
 
-// ───────────────────────── SRD races ─────────────────────────
-// Mechanical data is open game content (SRD 5.1). Trait text is summarized.
-const RACES = {
-  Dwarf: {
-    asi: { con: 2 }, speed: 25, size: "Medium",
-    traits: [
-      ["Darkvision", "See in dim light within 60 ft as if bright, and darkness as dim (grayscale)."],
-      ["Dwarven Resilience", "Advantage on saves vs poison; resistance to poison damage."],
-      ["Dwarven Combat Training", "Proficiency with battleaxe, handaxe, light hammer, warhammer."],
-      ["Stonecunning", "Double proficiency on History checks about stonework."],
-      ["Tool Proficiency", "Proficiency with one set of artisan's tools (smith, brewer, or mason)."],
-    ],
-    subraces: {
-      "Hill Dwarf": { asi: { wis: 1 }, traits: [["Dwarven Toughness", "Max HP increases by 1 per level."]] },
-      "Mountain Dwarf": { asi: { str: 2 }, traits: [["Dwarven Armor Training", "Proficiency with light and medium armor."]] },
-    },
-  },
-  Elf: {
-    asi: { dex: 2 }, speed: 30, size: "Medium",
-    traits: [
-      ["Darkvision", "See 60 ft in dim light as bright, darkness as dim."],
-      ["Keen Senses", "Proficiency in the Perception skill."],
-      ["Fey Ancestry", "Advantage vs being charmed; magic can't put you to sleep."],
-      ["Trance", "Meditate 4 hours for the benefit of an 8-hour rest."],
-    ],
-    subraces: {
-      "High Elf": { asi: { int: 1 }, traits: [["Cantrip", "Know one wizard cantrip (Intelligence)."], ["Elf Weapon Training", "Longsword, shortsword, shortbow, longbow."], ["Extra Language", "Learn one extra language."]] },
-      "Wood Elf": { asi: { wis: 1 }, speed: 35, traits: [["Elf Weapon Training", "Longsword, shortsword, shortbow, longbow."], ["Fleet of Foot", "Base walking speed 35 ft."], ["Mask of the Wild", "Hide when lightly obscured by nature."]] },
-      "Drow": { asi: { cha: 1 }, traits: [["Superior Darkvision", "Darkvision out to 120 ft."], ["Sunlight Sensitivity", "Disadvantage on attacks & Perception (sight) in sunlight."], ["Drow Magic", "Dancing lights; faerie fire at 3rd, darkness at 5th (Charisma)."], ["Drow Weapon Training", "Rapier, shortsword, hand crossbow."]] },
-    },
-  },
-  Halfling: {
-    asi: { dex: 2 }, speed: 25, size: "Small",
-    traits: [
-      ["Lucky", "Reroll a natural 1 on an attack, check, or save (use the new roll)."],
-      ["Brave", "Advantage on saves vs being frightened."],
-      ["Halfling Nimbleness", "Move through the space of any creature larger than you."],
-    ],
-    subraces: {
-      "Lightfoot": { asi: { cha: 1 }, traits: [["Naturally Stealthy", "Hide when obscured by a creature at least one size larger."]] },
-      "Stout": { asi: { con: 1 }, traits: [["Stout Resilience", "Advantage vs poison; resistance to poison damage."]] },
-    },
-  },
-  Human: {
-    asi: { str: 1, dex: 1, con: 1, int: 1, wis: 1, cha: 1 }, speed: 30, size: "Medium",
-    traits: [["Extra Language", "Learn one extra language of your choice."]],
-    subraces: {},
-  },
-  Dragonborn: {
-    asi: { str: 2, cha: 1 }, speed: 30, size: "Medium",
-    traits: [
-      ["Draconic Ancestry", "Choose a dragon type; sets your breath and resistance."],
-      ["Breath Weapon", "Exhale energy in a line/cone; DC 8 + CON + prof, scales with level."],
-      ["Damage Resistance", "Resistance to the damage type of your ancestry."],
-    ],
-    subraces: {},
-  },
-  Gnome: {
-    asi: { int: 2 }, speed: 25, size: "Small",
-    traits: [
-      ["Darkvision", "See 60 ft in dim light as bright, darkness as dim."],
-      ["Gnome Cunning", "Advantage on INT, WIS, CHA saves against magic."],
-    ],
-    subraces: {
-      "Rock Gnome": { asi: { con: 1 }, traits: [["Artificer's Lore", "Add double proficiency on History checks about magic items / devices."], ["Tinker", "Construct tiny clockwork devices."]] },
-      "Forest Gnome": { asi: { dex: 1 }, traits: [["Natural Illusionist", "Know the minor illusion cantrip (Intelligence)."], ["Speak with Small Beasts", "Communicate simple ideas to Small or smaller beasts."]] },
-    },
-  },
-  "Half-Elf": {
-    asi: { cha: 2 }, speed: 30, size: "Medium",
-    traits: [
-      ["Darkvision", "See 60 ft in dim light as bright, darkness as dim."],
-      ["Fey Ancestry", "Advantage vs charm; magic can't put you to sleep."],
-      ["Ability Choice", "+1 to two other abilities of your choice (set those manually)."],
-      ["Skill Versatility", "Proficiency in two skills of your choice."],
-    ],
-    subraces: {},
-  },
-  "Half-Orc": {
-    asi: { str: 2, con: 1 }, speed: 30, size: "Medium",
-    traits: [
-      ["Darkvision", "See 60 ft in dim light as bright, darkness as dim."],
-      ["Menacing", "Proficiency in Intimidation."],
-      ["Relentless Endurance", "Drop to 1 HP instead of 0 once per long rest."],
-      ["Savage Attacks", "Roll one extra weapon die on a melee critical hit."],
-    ],
-    subraces: {},
-  },
-  Tiefling: {
-    asi: { cha: 2, int: 1 }, speed: 30, size: "Medium",
-    traits: [
-      ["Darkvision", "See 60 ft in dim light as bright, darkness as dim."],
-      ["Hellish Resistance", "Resistance to fire damage."],
-      ["Infernal Legacy", "Thaumaturgy; hellish rebuke at 3rd, darkness at 5th (Charisma)."],
-    ],
-    subraces: {},
-  },
-};
+// ───────────────────────── Content loading ─────────────────────────
+// Fetch one content type's files from public/content/<type>/, merging by id
+// in index order (later files — user overrides — win on collision).
+async function loadContentType(type) {
+  const base = `${import.meta.env.BASE_URL}content/${type}`;
+  const files = await fetch(`${base}/index.json`).then((r) => r.json());
+  const arrays = await Promise.all(files.map((f) => fetch(`${base}/${f}`).then((r) => r.json())));
+  const byId = new Map();
+  arrays.forEach((arr) => arr.forEach((item) => byId.set(item.id, item)));
+  return [...byId.values()];
+}
 
-// ───────────────────────── SRD classes ─────────────────────────
-const F = (level, name, desc) => ({ level, name, desc });
-const CLASSES = {
-  Barbarian: {
-    hitDie: "d12", saves: ["str", "con"], spellAbility: "", caster: null,
-    features: [
-      F(1, "Rage", "Bonus action: bonus melee damage, advantage on STR checks/saves, resistance to bludgeoning/piercing/slashing."),
-      F(1, "Unarmored Defense", "While unarmored, AC = 10 + DEX mod + CON mod."),
-      F(2, "Reckless Attack", "Gain advantage on STR melee attacks; attacks against you gain advantage until your next turn."),
-      F(2, "Danger Sense", "Advantage on DEX saves against effects you can see."),
-      F(3, "Primal Path", "Choose your barbarian subclass."),
-      F(5, "Extra Attack", "Attack twice when you take the Attack action."),
-      F(5, "Fast Movement", "+10 ft speed while not in heavy armor."),
-      F(7, "Feral Instinct", "Advantage on initiative."),
-      F(9, "Brutal Critical", "Roll extra weapon damage dice on a critical hit."),
-      F(11, "Relentless Rage", "Drop to 1 HP instead of 0 with a CON save while raging."),
-    ],
-  },
-  Bard: {
-    hitDie: "d8", saves: ["dex", "cha"], spellAbility: "cha", caster: "full",
-    features: [
-      F(1, "Spellcasting", "Cast bard spells using Charisma."),
-      F(1, "Bardic Inspiration", "Bonus action: give a creature a d6 to add to a roll (scales with level)."),
-      F(2, "Jack of All Trades", "Add half proficiency to checks you aren't proficient in."),
-      F(2, "Song of Rest", "Allies regain extra HP on a short rest."),
-      F(3, "Bard College", "Choose your subclass."),
-      F(3, "Expertise", "Double proficiency on two chosen skills."),
-      F(5, "Font of Inspiration", "Regain Bardic Inspiration on a short or long rest."),
-      F(6, "Countercharm", "Performance grants allies advantage vs frightened/charmed."),
-      F(10, "Magical Secrets", "Learn spells from any class's list."),
-    ],
-  },
-  Cleric: {
-    hitDie: "d8", saves: ["wis", "cha"], spellAbility: "wis", caster: "full",
-    features: [
-      F(1, "Spellcasting", "Cast cleric spells using Wisdom."),
-      F(1, "Divine Domain", "Choose your domain; grants extra spells and features."),
-      F(2, "Channel Divinity", "Turn Undead plus a domain option (recharge on rest)."),
-      F(5, "Destroy Undead", "Channel Divinity can destroy low-CR undead."),
-      F(10, "Divine Intervention", "Call on your deity for aid."),
-    ],
-  },
-  Druid: {
-    hitDie: "d8", saves: ["int", "wis"], spellAbility: "wis", caster: "full",
-    features: [
-      F(1, "Druidic", "You know the secret druid language."),
-      F(1, "Spellcasting", "Cast druid spells using Wisdom."),
-      F(2, "Wild Shape", "Transform into beasts you've seen (limits by level)."),
-      F(2, "Druid Circle", "Choose your subclass."),
-      F(18, "Beast Spells", "Cast with verbal/somatic components while in Wild Shape."),
-      F(20, "Archdruid", "Unlimited Wild Shape uses."),
-    ],
-  },
-  Fighter: {
-    hitDie: "d10", saves: ["str", "con"], spellAbility: "", caster: null,
-    features: [
-      F(1, "Fighting Style", "Adopt a combat specialty (e.g. Defense, Dueling, Archery)."),
-      F(1, "Second Wind", "Bonus action: regain 1d10 + level HP (once per rest)."),
-      F(2, "Action Surge", "Take one additional action on your turn (once per rest)."),
-      F(3, "Martial Archetype", "Choose your subclass."),
-      F(5, "Extra Attack", "Attack twice when you take the Attack action."),
-      F(9, "Indomitable", "Reroll a failed saving throw (once per rest)."),
-      F(11, "Extra Attack (2)", "Attack three times when you take the Attack action."),
-    ],
-  },
-  Monk: {
-    hitDie: "d8", saves: ["str", "dex"], spellAbility: "", caster: null,
-    features: [
-      F(1, "Unarmored Defense", "While unarmored, AC = 10 + DEX mod + WIS mod."),
-      F(1, "Martial Arts", "Use DEX for unarmed strikes; bonus unarmed strike."),
-      F(2, "Ki", "Spend ki points on Flurry of Blows, Patient Defense, Step of the Wind."),
-      F(2, "Unarmored Movement", "+10 ft speed while unarmored (scales)."),
-      F(3, "Monastic Tradition", "Choose your subclass; Deflect Missiles."),
-      F(4, "Slow Fall", "Reduce falling damage as a reaction."),
-      F(5, "Extra Attack", "Attack twice; Stunning Strike with ki."),
-      F(7, "Evasion", "Take no damage on a successful DEX save (half on fail)."),
-    ],
-  },
-  Paladin: {
-    hitDie: "d10", saves: ["wis", "cha"], spellAbility: "cha", caster: "half",
-    features: [
-      F(1, "Divine Sense", "Detect celestials, fiends, undead nearby."),
-      F(1, "Lay on Hands", "Healing pool of 5 × paladin level HP."),
-      F(2, "Fighting Style", "Adopt a combat specialty."),
-      F(2, "Spellcasting", "Cast paladin spells using Charisma."),
-      F(2, "Divine Smite", "Expend a spell slot to deal extra radiant damage on a hit."),
-      F(3, "Sacred Oath", "Choose your oath (subclass); Channel Divinity; Divine Health."),
-      F(5, "Extra Attack", "Attack twice when you take the Attack action."),
-      F(6, "Aura of Protection", "You and nearby allies add your CHA mod to saves."),
-    ],
-  },
-  Ranger: {
-    hitDie: "d10", saves: ["str", "dex"], spellAbility: "wis", caster: "half",
-    features: [
-      F(1, "Favored Enemy", "Advantage to track and recall info about chosen foes."),
-      F(1, "Natural Explorer", "Bonuses while traveling in favored terrain."),
-      F(2, "Fighting Style", "Adopt a combat specialty."),
-      F(2, "Spellcasting", "Cast ranger spells using Wisdom."),
-      F(3, "Ranger Archetype", "Choose your subclass; Primeval Awareness."),
-      F(5, "Extra Attack", "Attack twice when you take the Attack action."),
-      F(8, "Land's Stride", "Move through nonmagical difficult terrain freely."),
-    ],
-  },
-  Rogue: {
-    hitDie: "d8", saves: ["dex", "int"], spellAbility: "", caster: null,
-    features: [
-      F(1, "Expertise", "Double proficiency on two chosen skills (or one + thieves' tools)."),
-      F(1, "Sneak Attack", "Extra damage once per turn with advantage or a flanking ally (scales)."),
-      F(1, "Thieves' Cant", "Secret coded language of rogues."),
-      F(2, "Cunning Action", "Bonus action to Dash, Disengage, or Hide."),
-      F(3, "Roguish Archetype", "Choose your subclass."),
-      F(5, "Uncanny Dodge", "Reaction to halve damage from one attack."),
-      F(7, "Evasion", "Take no damage on a successful DEX save (half on fail)."),
-      F(11, "Reliable Talent", "Treat a d20 of 9 or lower as 10 on proficient checks."),
-    ],
-  },
-  Sorcerer: {
-    hitDie: "d6", saves: ["con", "cha"], spellAbility: "cha", caster: "full",
-    features: [
-      F(1, "Spellcasting", "Cast sorcerer spells using Charisma."),
-      F(1, "Sorcerous Origin", "Choose your subclass; grants extra features."),
-      F(2, "Font of Magic", "Gain sorcery points to fuel your magic."),
-      F(3, "Metamagic", "Bend spells with options like Twin, Quicken, Subtle."),
-    ],
-  },
-  Warlock: {
-    hitDie: "d8", saves: ["wis", "cha"], spellAbility: "cha", caster: "warlock",
-    features: [
-      F(1, "Otherworldly Patron", "Choose your patron (subclass); grants expanded spells and features."),
-      F(1, "Pact Magic", "A few spell slots that all rise to your highest level and recharge on a short rest."),
-      F(2, "Eldritch Invocations", "Learn fragments of forbidden knowledge that grant lasting magical abilities (see the panel below)."),
-      F(3, "Pact Boon", "Choose Pact of the Blade, Chain, or Tome."),
-      F(4, "Ability Score Improvement", "Increase one ability by 2 or two abilities by 1 (or take a feat)."),
-      F(8, "Ability Score Improvement", "Increase one ability by 2 or two abilities by 1 (or take a feat)."),
-      F(11, "Mystic Arcanum (6th level)", "Choose one 6th-level spell to cast once per long rest, without a slot."),
-      F(12, "Ability Score Improvement", "Increase one ability by 2 or two abilities by 1 (or take a feat)."),
-      F(13, "Mystic Arcanum (7th level)", "Choose one 7th-level spell to cast once per long rest."),
-      F(15, "Mystic Arcanum (8th level)", "Choose one 8th-level spell to cast once per long rest."),
-      F(16, "Ability Score Improvement", "Increase one ability by 2 or two abilities by 1 (or take a feat)."),
-      F(17, "Mystic Arcanum (9th level)", "Choose one 9th-level spell to cast once per long rest."),
-      F(19, "Ability Score Improvement", "Increase one ability by 2 or two abilities by 1 (or take a feat)."),
-      F(20, "Eldritch Master", "Spend 1 minute entreating your patron to regain all expended Pact Magic slots, once per long rest."),
-    ],
-  },
-  Wizard: {
-    hitDie: "d6", saves: ["int", "wis"], spellAbility: "int", caster: "full",
-    features: [
-      F(1, "Spellcasting", "Cast wizard spells using Intelligence; keep a spellbook."),
-      F(1, "Arcane Recovery", "Recover some spell slots on a short rest (once per day)."),
-      F(2, "Arcane Tradition", "Choose your school of magic (subclass)."),
-      F(18, "Spell Mastery", "Cast a chosen 1st- and 2nd-level spell at will."),
-    ],
-  },
-};
+// Adapters: normalize loaded JSON into the shapes the component already consumes.
+const adaptRaces = (rows) =>
+  Object.fromEntries(
+    rows.map((r) => [
+      r.name,
+      {
+        asi: r.abilityBonuses || {},
+        speed: r.speed,
+        size: r.size,
+        traits: (r.traits || []).map((t) => [t.name, t.description]),
+        subraces: Object.fromEntries(
+          (r.subraces || []).map((s) => {
+            const sub = { asi: s.abilityBonuses || {}, traits: (s.traits || []).map((t) => [t.name, t.description]) };
+            if (s.speed != null) sub.speed = s.speed;
+            return [s.name, sub];
+          })
+        ),
+      },
+    ])
+  );
+
+const adaptClasses = (rows) =>
+  Object.fromEntries(
+    rows.map((c) => [
+      c.name,
+      {
+        hitDie: c.hitDie,
+        saves: c.savingThrows || [],
+        spellAbility: (c.spellcasting && c.spellcasting.ability) || "",
+        caster: (c.spellcasting && c.spellcasting.type) || null,
+        features: (c.features || []).map((f) => ({ level: f.level, name: f.name, desc: f.description })),
+      },
+    ])
+  );
+
+const adaptSkills = (rows) => rows.map((s) => [s.id, s.name, s.ability]);
+const adaptFeats = (rows) => Object.fromEntries(rows.map((f) => [f.name, f.description]));
+const adaptWeapons = (rows) =>
+  rows.map((w) => ({ name: w.name, dice: w.damage, type: w.damageType, versatile: w.versatileDamage, props: w.properties || [] }));
+const adaptInvocations = (rows) =>
+  rows.map((i) => ({ name: i.name, level: i.prerequisiteLevel, prereq: i.prerequisite || "", desc: i.description }));
+const adaptPatrons = (rows) => Object.fromEntries(rows.map((p) => [p.name, p.description]));
+const adaptPacts = (rows) => Object.fromEntries(rows.map((p) => [p.name, p.description]));
+
+// Load every content type and adapt into the constant shapes used in render.
+async function loadContent() {
+  const types = ["races", "classes", "skills", "feats", "weapons", "invocations", "patrons", "pacts"];
+  const [races, classes, skills, feats, weapons, invocations, patrons, pacts] = await Promise.all(
+    types.map(loadContentType)
+  );
+  return {
+    RACES: adaptRaces(races),
+    CLASSES: adaptClasses(classes),
+    SKILLS: adaptSkills(skills),
+    FEATS: adaptFeats(feats),
+    WEAPONS: adaptWeapons(weapons),
+    INVOCATIONS: adaptInvocations(invocations),
+    PATRONS: adaptPatrons(patrons),
+    PACTS: adaptPacts(pacts),
+  };
+}
 
 // Spell slot progressions (index by character level → [1st..9th])
 const FULL_SLOTS = {
@@ -324,62 +123,6 @@ const WARLOCK_INV_KNOWN = {
   11: 5, 12: 6, 13: 6, 14: 6, 15: 7, 16: 7, 17: 7, 18: 8, 19: 8, 20: 8,
 };
 
-// Eldritch Invocations (SRD 5.1). `level` is the warlock-level prerequisite;
-// `prereq` is any other requirement (pact boon or cantrip). Descriptions paraphrased.
-const INVOCATIONS = [
-  { name: "Agonizing Blast", level: 1, prereq: "eldritch blast", desc: "Add your Charisma modifier to the damage of your eldritch blast." },
-  { name: "Armor of Shadows", level: 1, prereq: "", desc: "Cast mage armor on yourself at will, without using a spell slot." },
-  { name: "Beast Speech", level: 1, prereq: "", desc: "Cast speak with animals at will." },
-  { name: "Beguiling Influence", level: 1, prereq: "", desc: "Gain proficiency in Deception and Persuasion." },
-  { name: "Book of Ancient Secrets", level: 1, prereq: "Pact of the Tome", desc: "Inscribe and cast ritual spells from your Book of Shadows." },
-  { name: "Devil's Sight", level: 1, prereq: "", desc: "See normally in magical and nonmagical darkness out to 120 ft." },
-  { name: "Eldritch Sight", level: 1, prereq: "", desc: "Cast detect magic at will, without a spell slot." },
-  { name: "Eldritch Spear", level: 1, prereq: "eldritch blast", desc: "Your eldritch blast's range becomes 300 ft." },
-  { name: "Eyes of the Rune Keeper", level: 1, prereq: "", desc: "You can read all writing." },
-  { name: "Fiendish Vigor", level: 1, prereq: "", desc: "Cast false life on yourself at will as a 1st-level spell." },
-  { name: "Gaze of Two Minds", level: 1, prereq: "", desc: "Touch a willing humanoid to perceive through its senses until the end of your next turn." },
-  { name: "Mask of Many Faces", level: 1, prereq: "", desc: "Cast disguise self at will." },
-  { name: "Misty Visions", level: 1, prereq: "", desc: "Cast silent image at will." },
-  { name: "Repelling Blast", level: 1, prereq: "eldritch blast", desc: "When you hit a creature with eldritch blast, push it up to 10 ft away." },
-  { name: "Thief of Five Fates", level: 1, prereq: "", desc: "Cast bane once using a warlock spell slot; regain on a long rest." },
-  { name: "Voice of the Chain Master", level: 1, prereq: "Pact of the Chain", desc: "Communicate with and perceive through your familiar at any distance." },
-  { name: "Mire the Mind", level: 5, prereq: "", desc: "Cast slow once using a warlock spell slot; regain on a long rest." },
-  { name: "One with Shadows", level: 5, prereq: "", desc: "In dim light or darkness, become invisible until you move or take an action." },
-  { name: "Sign of Ill Omen", level: 5, prereq: "", desc: "Cast bestow curse once using a warlock spell slot; regain on a long rest." },
-  { name: "Thirsting Blade", level: 5, prereq: "Pact of the Blade", desc: "Attack twice with your pact weapon when you take the Attack action." },
-  { name: "Investment of the Chain Master", level: 5, prereq: "Pact of the Chain", desc: "Your familiar gains a flying or swimming speed, can attack as a bonus action with magical strikes, uses your spell save DC, and you can take damage in its place." },
-  { name: "Bewitching Whispers", level: 7, prereq: "", desc: "Cast compulsion once using a warlock spell slot; regain on a long rest." },
-  { name: "Dreadful Word", level: 7, prereq: "", desc: "Cast confusion once using a warlock spell slot; regain on a long rest." },
-  { name: "Sculptor of Flesh", level: 7, prereq: "", desc: "Cast polymorph once using a warlock spell slot; regain on a long rest." },
-  { name: "Ascendant Step", level: 9, prereq: "", desc: "Cast levitate on yourself at will, without a spell slot." },
-  { name: "Minions of Chaos", level: 9, prereq: "", desc: "Cast conjure elemental once using a warlock spell slot; regain on a long rest." },
-  { name: "Otherworldly Leap", level: 9, prereq: "", desc: "Cast jump on yourself at will, without a spell slot." },
-  { name: "Whispers of the Grave", level: 9, prereq: "", desc: "Cast speak with dead at will." },
-  { name: "Lifedrinker", level: 12, prereq: "Pact of the Blade", desc: "Your pact weapon deals extra necrotic damage equal to your Charisma modifier." },
-  { name: "Chains of Carceri", level: 15, prereq: "Pact of the Chain", desc: "Cast hold monster at will on celestials, elementals, and fiends without a slot." },
-  { name: "Master of Myriad Forms", level: 15, prereq: "", desc: "Cast alter self at will." },
-  { name: "Visions of Distant Realms", level: 15, prereq: "", desc: "Cast arcane eye at will." },
-  { name: "Witch Sight", level: 15, prereq: "", desc: "See the true form of shapechangers or creatures concealed by illusion within 30 ft." },
-];
-
-// Otherworldly Patrons (short, paraphrased flavor). Great Old One is the default below.
-const PATRONS = {
-  "Archfey": "A lord or lady of the Feywild; charm, illusion, and fey teleportation.",
-  "The Fiend": "A devil or demon; temporary HP on kills, fire, and dark resilience.",
-  "Great Old One": "An alien intelligence; telepathy, psychic spells, and creeping madness.",
-  "The Celestial": "A being of the upper planes; radiant power and healing light.",
-  "The Hexblade": "A sentient weapon of the Shadowfell; curses and martial might.",
-  "The Fathomless": "A power of the deep; grasping tentacles, cold, and aquatic magic.",
-  "The Genie": "A noble genie; elemental damage and a sheltering magical vessel.",
-  "The Undead": "An undead horror; frightening presence and necrotic endurance.",
-};
-
-// Pact Boons (gained at level 3).
-const PACTS = {
-  "Pact of the Blade": "Conjure a magical pact weapon you're proficient with; bond magic weapons to it.",
-  "Pact of the Chain": "Learn find familiar; your familiar can take special forms (imp, pseudodragon, quasit, sprite).",
-  "Pact of the Tome": "Gain a Book of Shadows holding three extra cantrips from any class.",
-};
 const isPactPrereq = (p) => typeof p === "string" && p.startsWith("Pact of");
 
 // Pact of the Chain familiar forms (standard stat blocks; values are editable).
@@ -427,86 +170,12 @@ function slotsFor(caster, level) {
   }
   return s;
 }
-// Combine race + subrace ability bonuses
-function raceBonuses(raceName, subraceName) {
-  const out = { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 };
-  const r = RACES[raceName];
-  if (!r) return out;
-  Object.entries(r.asi || {}).forEach(([k, v]) => (out[k] += v));
-  const sub = r.subraces && r.subraces[subraceName];
-  if (sub) Object.entries(sub.asi || {}).forEach(([k, v]) => (out[k] += v));
-  return out;
-}
-// Combine race + subrace trait lists
-function raceTraitList(raceName, subraceName) {
-  const r = RACES[raceName];
-  if (!r) return [];
-  const sub = r.subraces && r.subraces[subraceName];
-  return [...(r.traits || []), ...((sub && sub.traits) || [])];
-}
-
-// Common 5e feats with short, paraphrased mechanical summaries.
-const FEATS = {
-  Alert: "+5 to initiative. You can't be surprised while conscious, and hidden attackers don't gain advantage on you.",
-  Actor: "+1 CHA. Advantage on Deception/Performance when impersonating; mimic speech or sounds you've heard.",
-  Athlete: "+1 STR or DEX. Stand from prone using 5 ft of movement; climb at full speed; running jump after only 5 ft.",
-  "Charger": "After a Dash, use a bonus action to make one melee attack with +5 damage, or shove a creature 10 ft.",
-  "Crossbow Expert": "Ignore loading on crossbows; no disadvantage firing in melee; bonus-action hand-crossbow shot after attacking.",
-  "Defensive Duelist": "With a finesse weapon, use a reaction to add your proficiency bonus to AC against one melee attack.",
-  "Dual Wielder": "+1 AC while wielding two melee weapons; two-weapon fight with non-light weapons; draw or stow two at once.",
-  Durable: "+1 CON. When you spend a Hit Die to heal, the minimum you regain is twice your CON modifier.",
-  "Elemental Adept": "Your spells ignore resistance to a chosen damage type, and treat 1s on damage dice as 2s.",
-  Grappler: "Advantage on attacks against a creature you're grappling; you can attempt to pin a grappled creature.",
-  "Great Weapon Master": "Bonus attack on a crit or kill; before a heavy-weapon attack, take -5 to hit for +10 damage.",
-  Healer: "Use a healer's kit to restore 1d6 + 4 + Hit Dice HP to a creature; stabilizing also restores 1 HP.",
-  "Heavy Armor Master": "+1 STR. Reduce nonmagical bludgeoning, piercing, and slashing damage by 3 while in heavy armor.",
-  "Inspiring Leader": "Spend 10 minutes to grant up to six allies temporary HP equal to your level + CHA modifier.",
-  "Keen Mind": "+1 INT. Always know which way is north and hours until sunrise/sunset; recall anything seen or heard in the past month.",
-  Lucky: "Gain 3 luck points; spend one to roll an extra d20 on an attack, check, or save (or an attack against you).",
-  "Mage Slayer": "Reaction attack when a creature within 5 ft casts; advantage on saves vs their spells; disadvantage on their concentration.",
-  "Magic Initiate": "Learn two cantrips and one 1st-level spell from a chosen class; cast the spell once per long rest.",
-  "Martial Adept": "Learn two combat maneuvers and gain one superiority die (d6) to fuel them.",
-  "Medium Armor Master": "Medium armor no longer imposes Stealth disadvantage; add up to +3 DEX to AC if your DEX is 16+.",
-  Mobile: "+10 ft speed; Dash ignores difficult terrain; no opportunity attacks from a creature you made a melee attack against.",
-  "Mounted Combatant": "Advantage vs unmounted creatures smaller than your mount; redirect attacks to yourself; mount dodges area effects.",
-  Observant: "+1 INT or WIS. Read lips; +5 to passive Perception and passive Investigation.",
-  "Polearm Master": "Bonus-action butt-end strike (1d4); opportunity attack when a creature enters your reach with a glaive, halberd, pike, quarterstaff, or spear.",
-  Resilient: "+1 to one ability score and gain proficiency in that ability's saving throws.",
-  "Ritual Caster": "Cast ritual spells from a chosen class's spell list using a ritual book.",
-  "Savage Attacker": "Once per turn, reroll the damage of a melee weapon attack and use either total.",
-  Sentinel: "Opportunity hits reduce a target's speed to 0; attack creatures even if they Disengage; reaction strike when a foe attacks an ally near you.",
-  Sharpshooter: "No disadvantage at long range; ignore half and three-quarters cover; take -5 to hit for +10 damage with ranged weapons.",
-  "Shield Master": "Bonus-action shove with your shield; add shield AC to DEX saves vs targeted effects; take no damage on a successful one.",
-  Skilled: "Gain proficiency in any combination of three skills or tools.",
-  Skulker: "Hide when lightly obscured; a missed ranged attack doesn't reveal you; no Perception disadvantage in dim light.",
-  "Spell Sniper": "Double the range of your attack-roll spells; ignore cover; learn one attack cantrip.",
-  "Tavern Brawler": "+1 STR or CON. Proficient with improvised weapons; unarmed strikes deal 1d4; bonus-action grapple after a hit.",
-  Tough: "Your maximum HP increases by twice your level (and by 2 each level after).",
-  "War Caster": "Advantage on concentration saves; cast with hands full; cast a spell as an opportunity attack instead of a weapon strike.",
-  "Artificer Initiate": "Learn one artificer cantrip and one 1st-level artificer spell (cast once per long rest free, or with slots); proficiency with one artisan's tools.",
-  "Chef": "+1 CON or WIS. On a rest, cook food that heals extra HP; make treats that grant temporary HP.",
-  "Crusher": "+1 STR or CON. Once per turn, move a creature 5 ft when you deal bludgeoning damage; a crit gives attackers advantage against it.",
-  "Eldritch Adept": "Prerequisite: Spellcasting or Pact Magic. Learn one Eldritch Invocation you qualify for; you can swap it when you gain a level.",
-  "Fey Touched": "+1 INT, WIS, or CHA. Learn misty step plus a 1st-level divination or enchantment spell; cast each once per long rest free (or with slots).",
-  "Fighting Initiate": "Prerequisite: a martial weapon proficiency. Learn one Fighting Style from the fighter list.",
-  "Gunner": "+1 DEX. Proficiency with firearms, ignore their loading property, and no disadvantage firing in melee.",
-  "Metamagic Adept": "Prerequisite: Spellcasting or Pact Magic. Learn two Metamagic options and gain 2 sorcery points to fuel them.",
-  "Piercer": "+1 STR or DEX. Once per turn reroll a piercing damage die; on a crit, add one extra piercing damage die.",
-  "Poisoner": "Your poison ignores resistance; coat a weapon to add poison damage and the poisoned condition (your DC); brew poison quickly.",
-  "Shadow Touched": "+1 INT, WIS, or CHA. Learn invisibility plus a 1st-level illusion or necromancy spell; cast each once per long rest free (or with slots).",
-  "Skill Expert": "+1 to one ability. Gain one skill proficiency and turn one proficiency you have into expertise.",
-  "Slasher": "+1 STR or DEX. Once per turn reduce a creature's speed by 10 ft when you deal slashing damage; a crit gives it disadvantage on attacks.",
-  "Telekinetic": "+1 INT, WIS, or CHA. Learn an improved mage hand; as a bonus action, shove a creature 5 ft (Strength save against your DC).",
-  "Telepathic": "+1 INT, WIS, or CHA. Speak telepathically to creatures within 60 ft; cast detect thoughts once per long rest free (or with slots).",
-};
-
 function makeCharacter(name = "New Adventurer") {
   const abilities = {};
   ABILITIES.forEach(([k]) => (abilities[k] = 10));
   const savingProfs = {};
   ABILITIES.forEach(([k]) => (savingProfs[k] = false));
-  const skillProfs = {};
-  SKILLS.forEach(([k]) => (skillProfs[k] = 0)); // 0 none, 1 proficient, 2 expertise
+  const skillProfs = {}; // keyed by skill id as the user toggles proficiency
   const spellSlots = {};
   SPELL_LEVELS.forEach((l) => (spellSlots[l] = { cur: 0, max: 0 }));
   return {
@@ -542,44 +211,6 @@ function makeCharacter(name = "New Adventurer") {
     bio: "",
   };
 }
-
-// SRD weapons: dice, damage type, versatile dice (or null), and properties.
-const WEAPONS = [
-  { name: "Club", dice: "1d4", type: "bludgeoning", versatile: null, props: ["light"] },
-  { name: "Dagger", dice: "1d4", type: "piercing", versatile: null, props: ["finesse", "light", "thrown"] },
-  { name: "Greatclub", dice: "1d8", type: "bludgeoning", versatile: null, props: ["two-handed"] },
-  { name: "Handaxe", dice: "1d6", type: "slashing", versatile: null, props: ["light", "thrown"] },
-  { name: "Javelin", dice: "1d6", type: "piercing", versatile: null, props: ["thrown"] },
-  { name: "Light Hammer", dice: "1d4", type: "bludgeoning", versatile: null, props: ["light", "thrown"] },
-  { name: "Mace", dice: "1d6", type: "bludgeoning", versatile: null, props: [] },
-  { name: "Quarterstaff", dice: "1d6", type: "bludgeoning", versatile: "1d8", props: ["versatile"] },
-  { name: "Sickle", dice: "1d4", type: "slashing", versatile: null, props: ["light"] },
-  { name: "Spear", dice: "1d6", type: "piercing", versatile: "1d8", props: ["thrown", "versatile"] },
-  { name: "Light Crossbow", dice: "1d8", type: "piercing", versatile: null, props: ["ranged", "loading", "two-handed"] },
-  { name: "Dart", dice: "1d4", type: "piercing", versatile: null, props: ["finesse", "thrown"] },
-  { name: "Shortbow", dice: "1d6", type: "piercing", versatile: null, props: ["ranged", "two-handed"] },
-  { name: "Sling", dice: "1d4", type: "bludgeoning", versatile: null, props: ["ranged"] },
-  { name: "Battleaxe", dice: "1d8", type: "slashing", versatile: "1d10", props: ["versatile"] },
-  { name: "Flail", dice: "1d8", type: "bludgeoning", versatile: null, props: [] },
-  { name: "Glaive", dice: "1d10", type: "slashing", versatile: null, props: ["heavy", "reach", "two-handed"] },
-  { name: "Greataxe", dice: "1d12", type: "slashing", versatile: null, props: ["heavy", "two-handed"] },
-  { name: "Greatsword", dice: "2d6", type: "slashing", versatile: null, props: ["heavy", "two-handed"] },
-  { name: "Halberd", dice: "1d10", type: "slashing", versatile: null, props: ["heavy", "reach", "two-handed"] },
-  { name: "Longsword", dice: "1d8", type: "slashing", versatile: "1d10", props: ["versatile"] },
-  { name: "Maul", dice: "2d6", type: "bludgeoning", versatile: null, props: ["heavy", "two-handed"] },
-  { name: "Morningstar", dice: "1d8", type: "piercing", versatile: null, props: [] },
-  { name: "Pike", dice: "1d10", type: "piercing", versatile: null, props: ["heavy", "reach", "two-handed"] },
-  { name: "Rapier", dice: "1d8", type: "piercing", versatile: null, props: ["finesse"] },
-  { name: "Scimitar", dice: "1d6", type: "slashing", versatile: null, props: ["finesse", "light"] },
-  { name: "Shortsword", dice: "1d6", type: "piercing", versatile: null, props: ["finesse", "light"] },
-  { name: "Trident", dice: "1d6", type: "piercing", versatile: "1d8", props: ["thrown", "versatile"] },
-  { name: "War Pick", dice: "1d8", type: "piercing", versatile: null, props: [] },
-  { name: "Warhammer", dice: "1d8", type: "bludgeoning", versatile: "1d10", props: ["versatile"] },
-  { name: "Hand Crossbow", dice: "1d6", type: "piercing", versatile: null, props: ["ranged", "light", "loading"] },
-  { name: "Heavy Crossbow", dice: "1d10", type: "piercing", versatile: null, props: ["ranged", "heavy", "loading", "two-handed"] },
-  { name: "Longbow", dice: "1d8", type: "piercing", versatile: null, props: ["ranged", "heavy", "two-handed"] },
-];
-const WEAPON_BY_NAME = Object.fromEntries(WEAPONS.map((w) => [w.name, w]));
 
 // Bring any attack (including legacy {name,bonus,dmg}) into the structured shape.
 function normalizeAttack(a) {
@@ -888,8 +519,18 @@ export default function App() {
   const [toast, setToast] = useState(null); // { text, id }
   const [showData, setShowData] = useState(false);
   const [importBuf, setImportBuf] = useState("");
+  const [content, setContent] = useState(null); // SRD content loaded from public/content/
 
   const flash = (text) => setToast({ text, id: Math.random() });
+
+  // Load SRD content from public/content/ on mount
+  useEffect(() => {
+    let cancelled = false;
+    loadContent()
+      .then((c) => { if (!cancelled) setContent(c); })
+      .catch((e) => console.error("Content load failed", e));
+    return () => { cancelled = true; };
+  }, []);
 
   const hasStorage = typeof window !== "undefined" && window.storage;
 
@@ -1033,7 +674,7 @@ export default function App() {
     });
   };
 
-  if (!loaded || !active) {
+  if (!loaded || !content || !active) {
     return (
       <div className="ds-root">
         <style>{CSS}</style>
@@ -1041,6 +682,26 @@ export default function App() {
       </div>
     );
   }
+
+  const { RACES, CLASSES, SKILLS, FEATS, WEAPONS, INVOCATIONS, PATRONS, PACTS } = content;
+  const WEAPON_BY_NAME = Object.fromEntries(WEAPONS.map((w) => [w.name, w]));
+  // Combine race + subrace ability bonuses
+  const raceBonuses = (raceName, subraceName) => {
+    const out = { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 };
+    const r = RACES[raceName];
+    if (!r) return out;
+    Object.entries(r.asi || {}).forEach(([k, v]) => (out[k] += v));
+    const sub = r.subraces && r.subraces[subraceName];
+    if (sub) Object.entries(sub.asi || {}).forEach(([k, v]) => (out[k] += v));
+    return out;
+  };
+  // Combine race + subrace trait lists
+  const raceTraitList = (raceName, subraceName) => {
+    const r = RACES[raceName];
+    if (!r) return [];
+    const sub = r.subraces && r.subraces[subraceName];
+    return [...(r.traits || []), ...((sub && sub.traits) || [])];
+  };
 
   // ── derived ──
   const pb = profBonus(active.level);
@@ -1079,7 +740,7 @@ export default function App() {
   const spellAtk = spellMod === null ? null : pb + spellMod;
   const hpPct = active.hp.max > 0 ? Math.max(0, Math.min(100, (active.hp.current / active.hp.max) * 100)) : 0;
 
-  const cycleSkill = (key) => patchObj("skillProfs", key, (active.skillProfs[key] + 1) % 3);
+  const cycleSkill = (key) => patchObj("skillProfs", key, (num(active.skillProfs[key]) + 1) % 3);
   const toggleSave = (key) => patchObj("savingProfs", key, !active.savingProfs[key]);
 
   const applyHP = (sign) => {
