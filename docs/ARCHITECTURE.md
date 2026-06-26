@@ -40,6 +40,12 @@ No backend. User content stored in IndexedDB.
 - `"hitDice": { "total": 5, "remaining": 3, "dieType": 10 }` — universal character state, not a class resource.
 - `"concentration": { "spellId": "...", "spellName": "..." } | null` — first-class character state,
   cleared on damage/rest.
+- `"spells": ["fireball", ...]` — the character's repertoire (built in the Spellbook). Cleared on
+  class change.
+- `"preparedSpells": ["fireball", ...]` — subset of `spells` marked prepared in Spellcasting.
+  Only meaningful for `learningType: "prepare"` classes; cantrips are always castable and never
+  counted. A spell is castable (and surfaces under Attacks) when it's a cantrip, or known by a
+  non-prepare caster, or prepared by a prepare caster.
 - Conditions and temp HP tracked in character state.
 
 ## Spell schema

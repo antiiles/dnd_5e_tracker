@@ -250,6 +250,7 @@ function makeCharacter(name = "New Adventurer") {
     familiar: { enabled: false, name: "", form: "", ac: 12, hp: { current: 1, max: 1, temp: 0 }, speed: "", notes: "", attacks: [] },
     resources: {},
     spells: [],
+    preparedSpells: [],
     features: "",
     equipment: "",
     bio: "",
@@ -291,6 +292,7 @@ function hydrateCharacter(raw) {
   c.feats = Array.isArray(raw.feats) ? raw.feats : [];
   c.invocations = Array.isArray(raw.invocations) ? raw.invocations : [];
   c.spells = Array.isArray(raw.spells) ? raw.spells : [];
+  c.preparedSpells = Array.isArray(raw.preparedSpells) ? raw.preparedSpells : [];
   c.familiar = { ...base.familiar, ...(raw.familiar || {}) };
   c.familiar.hp = { ...base.familiar.hp, ...((raw.familiar && raw.familiar.hp) || {}) };
   c.familiar.attacks = Array.isArray(raw.familiar && raw.familiar.attacks) ? raw.familiar.attacks : [];
@@ -463,16 +465,9 @@ const CSS = `
 .ds-attack .ds-input{width:100%;padding:6px 8px;font-size:14px;}
 @media(max-width:560px){.ds-attack{grid-template-columns:1fr 56px 30px;}.ds-attack .dmg{grid-column:1 / 3;}}
 
-.ds-slots{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;}
-.ds-slot{background:${T.ink2};border:1px solid ${T.line};border-radius:10px;padding:10px;}
-.ds-slot .lv{font-family:'Cinzel',serif;font-size:11px;letter-spacing:1px;color:${T.violet};margin-bottom:8px;}
-.sl-pips{display:flex;flex-wrap:wrap;gap:5px;}
-.ds-slot .sl-pips{margin-bottom:8px;min-height:18px;}
+.sl-pips{display:flex;flex-wrap:wrap;gap:5px;min-height:18px;}
 .ds-sp{width:16px;height:16px;border-radius:50%;border:1px solid ${T.violetDim};cursor:pointer;background:transparent;}
 .ds-sp[data-on="1"]{background:${T.violet};border-color:${T.violet};}
-.ds-slot .sl-max{display:flex;align-items:center;gap:6px;font-size:12px;color:${T.faint};}
-.ds-slot .sl-max input{width:46px;text-align:center;background:${T.panel};border:1px solid ${T.line};
-  border-radius:6px;color:${T.text};padding:3px;}
 
 .ds-res-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;}
 .ds-res-item{background:${T.ink2};border:1px solid ${T.line};border-radius:10px;padding:10px;}
@@ -507,6 +502,21 @@ const CSS = `
 .ds-sub-label{font-family:'Cinzel',serif;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:${T.gold};margin:14px 0 8px;}
 .ds-atk-derived{border-style:dashed;}
 .ds-atk-name-static{flex:1 1 auto;font-family:'Cinzel',serif;font-size:15px;color:${T.text};}
+
+/* spellcasting: per-level blocks */
+.ds-cast-level{border:1px solid ${T.line};border-radius:10px;padding:9px 11px;margin-bottom:9px;background:${T.ink2};}
+.ds-cast-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.ds-cast-head .lv{font-family:'Cinzel',serif;font-size:11px;letter-spacing:1px;color:${T.violet};min-width:64px;}
+.ds-cast-head .sl-pips{flex:1 1 auto;}
+.ds-cast-head .sl-max{display:flex;align-items:center;gap:6px;font-size:12px;color:${T.faint};}
+.ds-cast-head .sl-max input{width:46px;text-align:center;background:${T.panel};border:1px solid ${T.line};border-radius:6px;color:${T.text};padding:3px;}
+.ds-cast-spells{margin-top:8px;padding-top:8px;border-top:1px solid ${T.lineSoft};display:flex;flex-direction:column;gap:5px;}
+.ds-cast-spell{display:flex;align-items:center;gap:9px;flex-wrap:wrap;}
+.ds-cast-name{font-size:14px;color:${T.text};}
+.ds-cast-summary{font-size:11px;color:${T.violet};}
+.ds-cast-tag{font-size:10px;color:${T.gold};border:1px solid ${T.goldDim};border-radius:5px;padding:1px 5px;}
+.ds-prep-toggle{font-size:11px;border:1px solid ${T.violetDim};background:transparent;color:${T.dim};border-radius:6px;padding:2px 9px;cursor:pointer;min-width:74px;}
+.ds-prep-toggle.on{background:${T.violet};border-color:${T.violet};color:${T.ink};font-weight:600;}
 .ds-empty{color:${T.faint};font-style:italic;font-size:14px;padding:6px 0;}
 .ds-feat{padding:9px 0;border-bottom:1px solid ${T.lineSoft};}
 .ds-feat:last-child{border-bottom:none;}
@@ -634,9 +644,19 @@ export default function App() {
           if (res && res.value) {
             const parsed = JSON.parse(res.value);
             if (!cancelled && parsed.characters && parsed.characters.length) {
-              const migrated = parsed.characters.map((c) => ({
+              const migrated = parsed.characters.map((c) => {
+                // Legacy hardcoded Eldritch Blast attack rows → spellbook entry (single source).
+                const rawAttacks = (Array.isArray(c.attacks) ? c.attacks : []).map(normalizeAttack).filter(Boolean);
+                const attacks = rawAttacks.filter((a) => !a.eldritchBlast);
+                const spells = Array.isArray(c.spells) ? [...c.spells] : [];
+                if (rawAttacks.some((a) => a.eldritchBlast) && !spells.includes("eldritch-blast")) {
+                  spells.push("eldritch-blast");
+                }
+                return {
                 ...c,
-                attacks: (Array.isArray(c.attacks) ? c.attacks : []).map(normalizeAttack).filter(Boolean),
+                attacks,
+                spells,
+                preparedSpells: Array.isArray(c.preparedSpells) ? c.preparedSpells : [],
                 invocations: Array.isArray(c.invocations) ? c.invocations : [],
                 feats: Array.isArray(c.feats) ? c.feats : [],
                 patron: c.patron || "",
@@ -654,7 +674,8 @@ export default function App() {
                         attacks: Array.isArray(c.familiar.attacks) ? c.familiar.attacks : [],
                       }
                     : { enabled: false, name: "", form: "", ac: 12, hp: { current: 1, max: 1, temp: 0 }, speed: "", notes: "", attacks: [] },
-              }));
+                };
+              });
               setCharacters(migrated);
               const valid = migrated.find((c) => c.id === parsed.activeId);
               setActiveId(valid ? parsed.activeId : migrated[0].id);
@@ -683,8 +704,8 @@ export default function App() {
         c.hitDice = { total: 5, remaining: 5, dieType: 8 };
         c.spellSlots = slotsFor("warlock", 5);
         c.invocations = ["Agonizing Blast", "Investment of the Chain Master"];
+        c.spells = ["eldritch-blast", "hex", "toll-the-dead"];
         c.attacks = [
-          { id: uid(), kind: "spell", name: "Eldritch Blast", eldritchBlast: true, mode: "attack", dice: "1d10", damageType: "force", addMod: false, magic: 0, bonusDmg: 0, effect: "" },
           { id: uid(), kind: "weapon", name: "Light Crossbow", dice: "1d8", versatile: null, damageType: "piercing", props: ["ranged", "loading", "two-handed"], ability: "dex", proficient: true, twoHanded: false, addMod: true, magic: 0, bonusDmg: 0, effect: "" },
         ];
         c.familiar = {
@@ -889,11 +910,6 @@ export default function App() {
       proficient: true, twoHanded: false, addMod: true, magic: 0, bonusDmg: 0, effect: "",
     });
   };
-  const addEldritchBlast = () =>
-    pushAttack({
-      id: uid(), kind: "spell", name: "Eldritch Blast", eldritchBlast: true, mode: "attack",
-      dice: "1d10", damageType: "force", addMod: false, magic: 0, bonusDmg: 0, effect: "",
-    });
   const addSpell = () =>
     pushAttack({
       id: uid(), kind: "spell", name: "", mode: "attack", saveAbility: "dex",
@@ -1027,6 +1043,24 @@ export default function App() {
     return `${hit} · ${r.damage}`;
   };
 
+  // Repertoire (from Spellbook) and prepared subset (from Spellcasting).
+  const chosenSpellIds = active.spells || [];
+  const preparedSpellIds = active.preparedSpells || [];
+  const isPrepareCaster = !!(classDef && classDef.learning === "prepare");
+  // A spell is castable now: cantrips always; prepared casters need it prepared; known casters always.
+  const isSpellActive = (sp) => {
+    if (!sp) return false;
+    if (sp.level === 0) return true;
+    if (isPrepareCaster) return preparedSpellIds.includes(sp.id);
+    return true;
+  };
+  const togglePrepared = (id) =>
+    patch((c) => ({
+      preparedSpells: (c.preparedSpells || []).includes(id)
+        ? (c.preparedSpells || []).filter((s) => s !== id)
+        : [...(c.preparedSpells || []), id],
+    }));
+
   const toggleSlot = (lvl, idx) => {
     const slot = active.spellSlots[lvl];
     // pips represent used; clicking the nth pip sets cur so that 'idx+1' are used
@@ -1076,6 +1110,7 @@ export default function App() {
         spellSlots: slotsFor(def.caster, lvl),
         resources: {},
         spells: [],
+        preparedSpells: [],
       };
       if (id === "warlock") {
         out.patron = c.patron || "Great Old One";
@@ -1838,9 +1873,9 @@ export default function App() {
 
     const kindLabel = { weapon: "weapon", spell: "spell", custom: "custom", manual: "manual" };
     const attacks = active.attacks || [];
-    const spellActions = (active.spells || [])
+    const spellActions = chosenSpellIds
       .map((id) => spellById[id])
-      .filter((s) => s && s.action && s.action.type && s.action.type !== "none");
+      .filter((s) => s && s.action && s.action.type && s.action.type !== "none" && isSpellActive(s));
 
     return (
       <div className="ds-panel">
@@ -1854,9 +1889,6 @@ export default function App() {
               </option>
             ))}
           </select>
-          <button className="ds-btn" onClick={addEldritchBlast}>
-            + Eldritch Blast
-          </button>
           <button className="ds-btn" onClick={addSpell}>
             + Spell
           </button>
@@ -1869,7 +1901,7 @@ export default function App() {
         </div>
 
         {attacks.length === 0 && (
-          <div className="ds-empty">No attacks yet — add a weapon, Eldritch Blast, or a custom attack above.</div>
+          <div className="ds-empty">No attacks yet — add a weapon or custom attack above, or add spells in the Spellbook.</div>
         )}
 
         {attacks.map((a) => {
@@ -2026,79 +2058,139 @@ export default function App() {
     );
   };
 
-  const renderSpellcasting = () => (
-    <div className="ds-panel">
-      <div className="ds-panel-title">Spellcasting</div>
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
-        <div className="ds-field">
-          <label>Casting ability</label>
-          <select
-            className="ds-select"
-            value={active.spellAbility}
-            onChange={(e) => patch({ spellAbility: e.target.value })}
+  const spellLine = (sp, showPrepare) => {
+    const summary = spellSummary(sp);
+    const prepared = preparedSpellIds.includes(sp.id);
+    const actionable = sp.action && sp.action.type && sp.action.type !== "none";
+    return (
+      <div className="ds-cast-spell" key={sp.id}>
+        {showPrepare && (
+          <button
+            className={`ds-prep-toggle${prepared ? " on" : ""}`}
+            onClick={() => togglePrepared(sp.id)}
+            aria-pressed={prepared}
+            title={prepared ? "Prepared — tap to unprepare" : "Tap to prepare"}
           >
-            <option value="">— none —</option>
-            {ABILITIES.map(([k, full]) => (
-              <option key={k} value={k}>
-                {full}
-              </option>
-            ))}
-          </select>
-        </div>
-        {spellDC !== null && (
-          <>
-            <div className="ds-stat" style={{ minWidth: 90 }}>
-              <div className="lab">Save DC</div>
-              <div className="big" style={{ color: T.violet }}>
-                {spellDC}
-              </div>
-            </div>
-            <div className="ds-stat" style={{ minWidth: 90 }}>
-              <div className="lab">Spell Atk</div>
-              <div className="big" style={{ color: T.violet }}>
-                {fmtMod(spellAtk)}
-              </div>
-            </div>
-          </>
+            {prepared ? "Prepared" : "Prepare"}
+          </button>
         )}
+        <span className="ds-cast-name">{sp.name}</span>
+        {summary && <span className="ds-cast-summary">{summary}</span>}
+        {actionable && isSpellActive(sp) && <span className="ds-cast-tag">in attacks</span>}
       </div>
-      <div className="ds-slots">
-        {SPELL_LEVELS.map((lvl) => {
+    );
+  };
+
+  const renderSpellcasting = () => {
+    const known = chosenSpellIds.map((id) => spellById[id]).filter(Boolean);
+    const knownByLevel = {};
+    known.forEach((sp) => { (knownByLevel[sp.level] = knownByLevel[sp.level] || []).push(sp); });
+    const cantrips = knownByLevel[0] || [];
+    const prepMax = isPrepareCaster ? Math.max(1, mods[spellAbilityKey] + charLevel) : 0;
+    const prepCount = preparedSpellIds.filter((id) => (spellById[id]?.level || 0) > 0).length;
+    const isWarlock = classDef && classDef.caster === "warlock";
+    const pactLevel = isWarlock ? (WARLOCK_SLOTS[lvlClamped] || [0])[0] : 0;
+    const levelsToShow = SPELL_LEVELS.filter(
+      (l) => (active.spellSlots[l]?.max || 0) > 0 || (knownByLevel[l]?.length)
+    );
+    return (
+      <div className="ds-panel">
+        <div className="ds-panel-title">Spellcasting</div>
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
+          <div className="ds-field">
+            <label>Casting ability</label>
+            <select
+              className="ds-select"
+              value={active.spellAbility}
+              onChange={(e) => patch({ spellAbility: e.target.value })}
+            >
+              <option value="">— none —</option>
+              {ABILITIES.map(([k, full]) => (
+                <option key={k} value={k}>{full}</option>
+              ))}
+            </select>
+          </div>
+          {spellDC !== null && (
+            <>
+              <div className="ds-stat" style={{ minWidth: 90 }}>
+                <div className="lab">Save DC</div>
+                <div className="big" style={{ color: T.violet }}>{spellDC}</div>
+              </div>
+              <div className="ds-stat" style={{ minWidth: 90 }}>
+                <div className="lab">Spell Atk</div>
+                <div className="big" style={{ color: T.violet }}>{fmtMod(spellAtk)}</div>
+              </div>
+            </>
+          )}
+          {isPrepareCaster && (
+            <div className="ds-stat" style={{ minWidth: 90 }}>
+              <div className="lab">Prepared</div>
+              <div className="big" style={{ color: T.gold }}>{prepCount} / {prepMax}</div>
+            </div>
+          )}
+        </div>
+
+        {isWarlock && (
+          <p className="ds-muted" style={{ marginBottom: 12 }}>
+            Pact Magic — leveled spells are cast using your level-{pactLevel} pact slot.
+          </p>
+        )}
+
+        {cantrips.length > 0 && (
+          <div className="ds-cast-level">
+            <div className="ds-cast-head"><span className="lv">Cantrips</span></div>
+            <div className="ds-cast-spells">{cantrips.map((sp) => spellLine(sp, false))}</div>
+          </div>
+        )}
+
+        {levelsToShow.map((lvl) => {
           const slot = active.spellSlots[lvl];
           const used = slot.max - slot.cur;
+          const here = knownByLevel[lvl] || [];
           return (
-            <div className="ds-slot" key={lvl}>
-              <div className="lv">LEVEL {lvl}</div>
-              <div className="sl-pips">
-                {Array.from({ length: slot.max }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="ds-sp"
-                    data-on={i < used ? "1" : "0"}
-                    onClick={() => toggleSlot(lvl, i)}
-                    title={i < used ? "Used — tap to restore" : "Available — tap to spend"}
+            <div className="ds-cast-level" key={lvl}>
+              <div className="ds-cast-head">
+                <span className="lv">Level {lvl}</span>
+                <div className="sl-pips">
+                  {Array.from({ length: slot.max }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="ds-sp"
+                      data-on={i < used ? "1" : "0"}
+                      onClick={() => toggleSlot(lvl, i)}
+                      title={i < used ? "Used — tap to restore" : "Available — tap to spend"}
+                    />
+                  ))}
+                  {slot.max === 0 && <span className="ds-muted">no slots</span>}
+                </div>
+                <div className="sl-max">
+                  slots
+                  <input
+                    value={slot.max}
+                    inputMode="numeric"
+                    onChange={(e) => setSlotMax(lvl, e.target.value)}
+                    aria-label={`Level ${lvl} max slots`}
                   />
-                ))}
-                {slot.max === 0 && <span className="ds-muted">—</span>}
+                </div>
               </div>
-              <div className="sl-max">
-                slots
-                <input
-                  value={slot.max}
-                  inputMode="numeric"
-                  onChange={(e) => setSlotMax(lvl, e.target.value)}
-                  aria-label={`Level ${lvl} max slots`}
-                />
-              </div>
+              {here.length > 0 && <div className="ds-cast-spells">{here.map((sp) => spellLine(sp, isPrepareCaster))}</div>}
             </div>
           );
         })}
+
+        {known.length === 0 ? (
+          <p className="ds-muted" style={{ marginTop: 12 }}>
+            Add spells in the Spellbook below — they appear here by level for slot tracking
+            {isPrepareCaster ? " and preparation" : ""}.
+          </p>
+        ) : (
+          <p className="ds-muted" style={{ marginTop: 12 }}>
+            Tap a circle to spend or restore a slot.{isPrepareCaster ? " Mark spells Prepared to make them castable (they then appear under Attacks)." : " Attack and save spells appear under Attacks above."}
+          </p>
+        )}
       </div>
-      <p className="ds-muted" style={{ marginTop: 12 }}>
-        Set the number of slots per level, then tap a circle to spend or restore one.
-      </p>
-    </div>
-  );
+    );
+  };
 
   const renderSpellbook = () => {
     if (!classDef || !classDef.caster) return null;
@@ -2144,10 +2236,6 @@ export default function App() {
       }));
 
     const isPrepare = classDef.learning === "prepare";
-    const isWarlock = classDef.caster === "warlock";
-    const pactLevel = isWarlock ? (WARLOCK_SLOTS[lvlClamped] || [0])[0] : 0;
-    const prepMax = isPrepare ? Math.max(1, mods[classDef.spellAbility] + charLevel) : 0;
-    const prepCount = chosenSpells.filter(id => (spellById[id]?.level || 0) > 0).length;
 
     const orderedLevels = [0, ...SPELL_LEVELS].filter(l => byLevel[l]?.length);
 
@@ -2155,16 +2243,9 @@ export default function App() {
       <div className="ds-panel">
         <div className="ds-panel-title">Spellbook</div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, marginTop: -4 }}>
-          <span className="ds-muted">{isPrepare ? "Prepared (cantrips free)" : "Known spells"}</span>
-          <span style={{ fontSize: 14, color: T.violet, fontWeight: 600 }}>
-            {isPrepare ? `${prepCount} / ${prepMax}` : prepCount}
-          </span>
+          <span className="ds-muted">{isPrepare ? "Spells in your book" : "Known spells"}</span>
+          <span style={{ fontSize: 14, color: T.violet, fontWeight: 600 }}>{chosenSpells.length}</span>
         </div>
-        {isWarlock && (
-          <p className="ds-muted" style={{ marginBottom: 12 }}>
-            Pact Magic — all leveled spells are cast using your level-{pactLevel} pact slot.
-          </p>
-        )}
         {orderedLevels.map(lvl => (
           <div key={lvl} className="ds-sb-section">
             <div className="ds-sb-lvl-head">{lvl === 0 ? "Cantrips" : `Level ${lvl}`}</div>
@@ -2206,7 +2287,8 @@ export default function App() {
           </div>
         ))}
         <p className="ds-muted" style={{ marginTop: 12 }}>
-          Tap + to add a spell; tap a row to see what it does. Attack and save spells also appear under Attacks above.
+          Tap + to add a spell to your book; tap a row to see what it does. Added spells appear in
+          Spellcasting by level{isPrepare ? ", where you prepare them for combat" : ""}.
         </p>
       </div>
     );

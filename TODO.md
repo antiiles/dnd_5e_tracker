@@ -47,12 +47,11 @@ Build the interface for users to add their own content:
 - Merge with SRD content at load time (user IDs override SRD IDs)
 - Show loaded user files with option to remove
 
-## 5c. Retire legacy Eldritch Blast attack path (optional cleanup)
-Now that spellbook spells with an `action` block render as computed attack cards, the bespoke
-`+ Eldritch Blast` button and the `eldritchBlast`-flagged manual attack row overlap with the
-spell-driven flow (a warlock can show Eldritch Blast twice). Decide whether to drop the button +
-special branch in `computeAttack`/`renderAttacks` and let the spellbook be the single source, or
-keep it as a manual-entry convenience. Low priority — both work today.
+## 5c. Retire legacy Eldritch Blast attack path ✅ done
+The `+ Eldritch Blast` button and `addEldritchBlast` were removed; the spellbook is now the single
+source (Eldritch Blast is a normal spell with an `action` block). `computeAttack`'s `eldritchBlast`
+branch is retained because `spellToAttack` reuses it for the spell-driven beam/invocation math. The
+load migration converts any stored `eldritchBlast` attack row into a `spells` entry.
 
 ## 5b. Warlock Mystic Arcanum
 At level 11+ warlocks gain once-per-long-rest castings of 6th–9th-level spells (one spell per tier, gained at levels 11/13/15/17) that don't use spell slots. The spellbook's pool filter caps at the highest slot level (`max > 0`), so Mystic Arcanum spells would be invisible. Model as a set of per-spell `toggle` resources keyed by level (e.g. `arcanum-6`, `arcanum-7`) rather than slots — closest to the existing class-resource `toggle` displayType. Separate from item 5 to keep scope bounded.
