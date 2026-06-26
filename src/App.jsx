@@ -67,6 +67,7 @@ const adaptClasses = (rows) =>
         spellAbility: (c.spellcasting && c.spellcasting.ability) || "",
         caster: (c.spellcasting && c.spellcasting.type) || null,
         features: (c.features || []).map((f) => ({ level: f.level, name: f.name, desc: f.description })),
+        resources: c.resources || [],
       },
     ])
   );
@@ -207,6 +208,7 @@ function makeCharacter(name = "New Adventurer") {
     feats: [],
     invocations: [],
     familiar: { enabled: false, name: "", form: "", ac: 12, hp: { current: 1, max: 1, temp: 0 }, speed: "", notes: "", attacks: [] },
+    resources: {},
     features: "",
     equipment: "",
     bio: "",
@@ -242,6 +244,7 @@ function hydrateCharacter(raw) {
     c.hitDice = { ...base.hitDice, ...(raw.hitDice || {}) };
   }
   if (c.concentration === undefined) c.concentration = null;
+  c.resources = (raw.resources && typeof raw.resources === "object" && !Array.isArray(raw.resources)) ? { ...raw.resources } : {};
   c.deathSaves = { ...base.deathSaves, ...(raw.deathSaves || {}) };
   c.attacks = (Array.isArray(raw.attacks) ? raw.attacks : []).map(normalizeAttack).filter(Boolean);
   c.feats = Array.isArray(raw.feats) ? raw.feats : [];
@@ -421,13 +424,24 @@ const CSS = `
 .ds-slots{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;}
 .ds-slot{background:${T.ink2};border:1px solid ${T.line};border-radius:10px;padding:10px;}
 .ds-slot .lv{font-family:'Cinzel',serif;font-size:11px;letter-spacing:1px;color:${T.violet};margin-bottom:8px;}
-.ds-slot .sl-pips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;min-height:18px;}
+.sl-pips{display:flex;flex-wrap:wrap;gap:5px;}
+.ds-slot .sl-pips{margin-bottom:8px;min-height:18px;}
 .ds-sp{width:16px;height:16px;border-radius:50%;border:1px solid ${T.violetDim};cursor:pointer;background:transparent;}
 .ds-sp[data-on="1"]{background:${T.violet};border-color:${T.violet};}
 .ds-slot .sl-max{display:flex;align-items:center;gap:6px;font-size:12px;color:${T.faint};}
 .ds-slot .sl-max input{width:46px;text-align:center;background:${T.panel};border:1px solid ${T.line};
   border-radius:6px;color:${T.text};padding:3px;}
 
+.ds-res-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;}
+.ds-res-item{background:${T.ink2};border:1px solid ${T.line};border-radius:10px;padding:10px;}
+.ds-res-name{font-family:'Cinzel',serif;font-size:11px;letter-spacing:1px;color:${T.gold};margin-bottom:8px;}
+.ds-res-recharge{font-size:11px;color:${T.faint};margin-top:6px;}
+.ds-res-counter{display:flex;align-items:center;gap:8px;}
+.ds-res-val{min-width:50px;text-align:center;font-size:18px;font-weight:600;color:${T.text};}
+.ds-res-btn{width:28px;height:28px;border-radius:6px;border:1px solid ${T.line};background:${T.panel2};color:${T.text};cursor:pointer;font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center;}
+.ds-res-btn:disabled{opacity:.35;cursor:default;}
+.ds-res-toggle{width:100%;padding:7px 0;font-size:13px;}
+.ds-res-used{background:${T.panel}!important;color:${T.faint}!important;border-color:${T.line}!important;}
 .ds-textarea{width:100%;min-height:150px;resize:vertical;line-height:1.6;font-size:15px;}
 .ds-muted{color:${T.dim};font-size:13px;}
 .ds-empty{color:${T.faint};font-style:italic;font-size:14px;padding:6px 0;}
@@ -734,6 +748,20 @@ export default function App() {
     : [];
   const isWarlock = activeClassId === "warlock";
   const lvlClamped = Math.max(1, Math.min(20, charLevel));
+  const resourceMax = (r) => {
+    const m = r.max;
+    if (typeof m === "number") return m;
+    if (m?.scalingTable) return num(m.scalingTable[lvlClamped - 1], 0);
+    if (m?.scalingType === "level") return lvlClamped;
+    if (m?.scalingType === "cha-mod") return Math.max(1, mods.cha);
+    return 0;
+  };
+  const classResources = classDef ? classDef.resources.filter((r) => resourceMax(r) > 0) : [];
+  const resCur = (id, max) => {
+    const v = active.resources?.[id];
+    return v === undefined ? max : Math.max(0, Math.min(num(v, 0), max));
+  };
+  const setResource = (id, value) => patch((c) => ({ resources: { ...c.resources, [id]: value } }));
   const hasEldritchAdept = (active.feats || []).some((f) => (f.name || "").trim().toLowerCase() === "eldritch adept");
   const invKnownAllowed = (WARLOCK_INV_KNOWN[lvlClamped] || 0) + (hasEldritchAdept ? 1 : 0);
   const availableInvocations = INVOCATIONS.filter(
@@ -928,6 +956,7 @@ export default function App() {
         spellAbility: def.spellAbility || "",
         hitDice: { total: lvl, remaining: lvl, dieType: def.hitDie },
         spellSlots: slotsFor(def.caster, lvl),
+        resources: {},
       };
       if (id === "warlock") {
         out.patron = c.patron || "Great Old One";
@@ -957,6 +986,8 @@ export default function App() {
 
   // ── rests & hit dice ──
   const longRest = () => {
+    const resRefill = {};
+    classResources.forEach((r) => { resRefill[r.id] = resourceMax(r); });
     patch((c) => {
       const spellSlots = {};
       SPELL_LEVELS.forEach((l) => {
@@ -971,21 +1002,27 @@ export default function App() {
         spellSlots,
         hitDice: { ...c.hitDice, remaining },
         deathSaves: { s: 0, f: 0 },
+        resources: { ...c.resources, ...resRefill },
       };
     });
     flash("Long rest — HP and spell slots restored; hit dice and death saves recovered.");
   };
   const shortRest = () => {
     const isWarlock = classDef && classDef.caster === "warlock";
+    const resRefill = {};
+    classResources.filter((r) => r.recharge === "short-rest").forEach((r) => { resRefill[r.id] = resourceMax(r); });
     patch((c) => {
+      const out = { resources: { ...c.resources, ...resRefill } };
       const def = CLASSES[c.classes[0].id];
-      if (!(def && def.caster === "warlock")) return {};
-      const spellSlots = {};
-      SPELL_LEVELS.forEach((l) => {
-        const s = c.spellSlots[l];
-        spellSlots[l] = { max: s.max, cur: s.max };
-      });
-      return { spellSlots };
+      if (def && def.caster === "warlock") {
+        const spellSlots = {};
+        SPELL_LEVELS.forEach((l) => {
+          const s = c.spellSlots[l];
+          spellSlots[l] = { max: s.max, cur: s.max };
+        });
+        out.spellSlots = spellSlots;
+      }
+      return out;
     });
     flash(
       isWarlock
@@ -1759,6 +1796,73 @@ export default function App() {
     );
   };
 
+  const renderResources = () => {
+    if (classResources.length === 0) return null;
+    return (
+      <div className="ds-panel">
+        <div className="ds-panel-title">Class resources</div>
+        <div className="ds-res-grid">
+          {classResources.map((r) => {
+            const max = resourceMax(r);
+            const cur = resCur(r.id, max);
+            const rechargeLabel = r.recharge === "short-rest" ? "short rest" : "long rest";
+            if (r.displayType === "counter") {
+              return (
+                <div className="ds-res-item" key={r.id}>
+                  <div className="ds-res-name">{r.name}</div>
+                  <div className="ds-res-counter">
+                    <button className="ds-res-btn" onClick={() => setResource(r.id, Math.max(0, cur - 1))} disabled={cur === 0}>−</button>
+                    <span className="ds-res-val">{cur} / {max}</span>
+                    <button className="ds-res-btn" onClick={() => setResource(r.id, Math.min(max, cur + 1))} disabled={cur === max}>+</button>
+                  </div>
+                  <div className="ds-res-recharge">{rechargeLabel}</div>
+                </div>
+              );
+            }
+            if (r.displayType === "pips") {
+              const used = max - cur;
+              return (
+                <div className="ds-res-item" key={r.id}>
+                  <div className="ds-res-name">{r.name}</div>
+                  <div className="sl-pips" style={{ margin: "6px 0" }}>
+                    {Array.from({ length: max }).map((_, i) => (
+                      <div
+                        key={i}
+                        className="ds-sp"
+                        data-on={i < used ? "1" : "0"}
+                        onClick={() => {
+                          const targetUsed = i + 1 === used ? i : i + 1;
+                          setResource(r.id, max - targetUsed);
+                        }}
+                        title={i < used ? "Used — tap to restore" : "Available — tap to spend"}
+                      />
+                    ))}
+                  </div>
+                  <div className="ds-res-recharge">{rechargeLabel}</div>
+                </div>
+              );
+            }
+            if (r.displayType === "toggle") {
+              return (
+                <div className="ds-res-item" key={r.id}>
+                  <div className="ds-res-name">{r.name}</div>
+                  <button
+                    className={`ds-btn ds-res-toggle${cur === 0 ? " ds-res-used" : ""}`}
+                    onClick={() => setResource(r.id, cur === 0 ? 1 : 0)}
+                  >
+                    {cur === 0 ? "Used" : "Available"}
+                  </button>
+                  <div className="ds-res-recharge">{rechargeLabel}</div>
+                </div>
+              );
+            }
+            return null;
+          })}
+        </div>
+      </div>
+    );
+  };
+
   const renderSpellcasting = () => (
     <div className="ds-panel">
       <div className="ds-panel-title">Spellcasting</div>
@@ -2211,6 +2315,7 @@ export default function App() {
 
         {tab === "magic" && (
           <div className="ds-grid ds-fade" style={{ gridTemplateColumns: "1fr" }}>
+            {renderResources()}
             {renderAttacks()}
             {renderSpellcasting()}
           </div>

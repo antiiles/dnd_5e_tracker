@@ -5,11 +5,10 @@ in [docs/CODEMAP.md](docs/CODEMAP.md). Each item below is a self-contained sessi
 
 ## Current state vs. target
 
-Items 1 and 2 are done. **Remaining gaps vs ARCHITECTURE.md:**
+Items 1–3 are done. **Remaining gaps vs ARCHITECTURE.md:**
 
-- **Adapters still flatten content.** `adaptClasses` extracts `hitDie`, `saves`, `spellAbility`,
-  `caster`, `features`, and `name` — it drops `resources`, `mechanics`, and `subclasses` from the
-  JSON. Those fields exist in the data but aren't consumed yet (items 3–5).
+- **Adapters still partially flatten content.** `adaptClasses` now includes `resources` but still
+  drops `mechanics` and `subclasses` — consumed by items 4–5.
 - Classes are now keyed by `id` in the adapted map (matching the JSON files). Races/feats/etc. are
   still keyed by `name` (no change needed yet).
 
@@ -25,7 +24,7 @@ Migrate character state in `makeCharacter()` and `hydrateCharacter()` to the agr
 - Ensure `hitDice` uses `{ total, remaining, dieType }` (already partially there, verify shape)
 - Update all read sites in the component accordingly
 
-## 3. Dynamic resource tracking UI
+## 3. Dynamic resource tracking UI ✅ done
 Read the `resources` array from the loaded class data and render the right component per `displayType`:
 - `counter` — current / max with +/− buttons
 - `pips` — row of checkboxes
