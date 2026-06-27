@@ -593,13 +593,24 @@ const CSS = `
 .ds-cast-head .sl-pips{flex:1 1 auto;}
 .ds-cast-head .sl-max{display:flex;align-items:center;gap:6px;font-size:12px;color:${T.faint};}
 .ds-cast-head .sl-max input{width:46px;text-align:center;background:${T.panel};border:1px solid ${T.line};border-radius:6px;color:${T.text};padding:3px;}
-.ds-cast-spells{margin-top:8px;padding-top:8px;border-top:1px solid ${T.lineSoft};display:flex;flex-direction:column;gap:5px;}
-.ds-cast-spell{display:flex;align-items:center;gap:9px;flex-wrap:wrap;}
+.ds-cast-spells{margin-top:8px;padding-top:8px;border-top:1px solid ${T.lineSoft};display:flex;flex-direction:column;gap:7px;}
+.ds-cast-spell{display:flex;flex-direction:column;gap:5px;}
+.ds-cast-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap;}
+.ds-cast-body{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+  background:transparent;border:none;padding:0;margin:0;cursor:pointer;text-align:left;font:inherit;color:inherit;}
 .ds-cast-name{font-size:14px;color:${T.text};}
 .ds-cast-summary{font-size:11px;color:${T.violet};}
 .ds-cast-tag{font-size:10px;color:${T.gold};border:1px solid ${T.goldDim};border-radius:5px;padding:1px 5px;}
+.ds-cast-chev{margin-left:auto;color:${T.faint};font-size:10px;transition:transform .15s;}
+.ds-cast-chev.open{transform:rotate(180deg);}
+.ds-cast-detail{margin-left:2px;border-left:2px solid ${T.violetDim};padding-left:11px;}
+.ds-cast-detail p{margin:3px 0 0;font-size:13px;color:${T.dim};line-height:1.5;}
 .ds-prep-toggle{font-size:11px;border:1px solid ${T.violetDim};background:transparent;color:${T.dim};border-radius:6px;padding:2px 9px;cursor:pointer;min-width:74px;}
 .ds-prep-toggle.on{background:${T.violet};border-color:${T.violet};color:${T.ink};font-weight:600;}
+.ds-panel-toggle{width:100%;background:transparent;border:none;cursor:pointer;}
+.ds-fold-chev{display:inline-block;color:${T.violet};font-size:10px;transition:transform .15s;}
+.ds-fold-chev.open{transform:rotate(90deg);}
+.ds-fold-count{margin-left:6px;font-size:11px;color:${T.violet};font-weight:600;letter-spacing:0;}
 .ds-empty{color:${T.faint};font-style:italic;font-size:14px;padding:6px 0;}
 .ds-feat{padding:9px 0;border-bottom:1px solid ${T.lineSoft};}
 .ds-feat:last-child{border-bottom:none;}
@@ -708,6 +719,8 @@ export default function App() {
   const [importBuf, setImportBuf] = useState("");
   const [content, setContent] = useState(null); // SRD content loaded from public/content/
   const [openSpell, setOpenSpell] = useState(null); // spellbook row expanded for details
+  const [spellbookOpen, setSpellbookOpen] = useState(true); // Spellbook panel collapsed/expanded
+  const [openCastSpells, setOpenCastSpells] = useState(() => new Set()); // Spellcasting rows with description shown (multi-open)
   const [castLevels, setCastLevels] = useState({}); // { [spellId]: chosen upcast slot level } (ephemeral)
   const [showContent, setShowContent] = useState(false); // homebrew content modal
   const [contentType, setContentType] = useState("spells"); // selected type in that modal
@@ -1195,6 +1208,12 @@ export default function App() {
         ? (c.preparedSpells || []).filter((s) => s !== id)
         : [...(c.preparedSpells || []), id],
     }));
+  const toggleCastSpell = (id) =>
+    setOpenCastSpells((s) => {
+      const next = new Set(s);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
 
   const toggleSlot = (lvl, idx) => {
     const slot = active.spellSlots[lvl];
@@ -2285,21 +2304,39 @@ export default function App() {
     const summary = spellSummary(sp);
     const prepared = preparedSpellIds.includes(sp.id);
     const actionable = sp.action && sp.action.type && sp.action.type !== "none";
+    const open = openCastSpells.has(sp.id);
+    const meta = [sp.castingTime, sp.range, sp.duration].filter(Boolean).join(" · ");
     return (
       <div className="ds-cast-spell" key={sp.id}>
-        {showPrepare && (
+        <div className="ds-cast-row">
+          {showPrepare && (
+            <button
+              className={`ds-prep-toggle${prepared ? " on" : ""}`}
+              onClick={() => togglePrepared(sp.id)}
+              aria-pressed={prepared}
+              title={prepared ? "Prepared — tap to unprepare" : "Tap to prepare"}
+            >
+              {prepared ? "Prepared" : "Prepare"}
+            </button>
+          )}
           <button
-            className={`ds-prep-toggle${prepared ? " on" : ""}`}
-            onClick={() => togglePrepared(sp.id)}
-            aria-pressed={prepared}
-            title={prepared ? "Prepared — tap to unprepare" : "Tap to prepare"}
+            className="ds-cast-body"
+            onClick={() => toggleCastSpell(sp.id)}
+            aria-expanded={open}
+            title={open ? "Hide description" : "Show description"}
           >
-            {prepared ? "Prepared" : "Prepare"}
+            <span className="ds-cast-name">{sp.name}</span>
+            {summary && <span className="ds-cast-summary">{summary}</span>}
+            {actionable && isSpellActive(sp) && <span className="ds-cast-tag">in attacks</span>}
+            <span className={`ds-cast-chev${open ? " open" : ""}`} aria-hidden="true">▾</span>
           </button>
+        </div>
+        {open && (
+          <div className="ds-cast-detail">
+            {meta && <div className="ds-sb-meta">{meta}</div>}
+            <p>{sp.description}</p>
+          </div>
         )}
-        <span className="ds-cast-name">{sp.name}</span>
-        {summary && <span className="ds-cast-summary">{summary}</span>}
-        {actionable && isSpellActive(sp) && <span className="ds-cast-tag">in attacks</span>}
       </div>
     );
   };
@@ -2464,10 +2501,20 @@ export default function App() {
 
     return (
       <div className="ds-panel">
-        <div className="ds-panel-title">Spellbook</div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, marginTop: -4 }}>
+        <button
+          type="button"
+          className="ds-panel-title ds-panel-toggle"
+          style={{ marginBottom: spellbookOpen ? 12 : 0 }}
+          onClick={() => setSpellbookOpen(o => !o)}
+          aria-expanded={spellbookOpen}
+        >
+          <span className={`ds-fold-chev${spellbookOpen ? " open" : ""}`} aria-hidden="true">▸</span>
+          Spellbook
+          <span className="ds-fold-count">{chosenSpells.length}</span>
+        </button>
+        {spellbookOpen && (<>
+        <div style={{ marginBottom: 14, marginTop: -4 }}>
           <span className="ds-muted">{isPrepare ? "Spells in your book" : "Known spells"}</span>
-          <span style={{ fontSize: 14, color: T.violet, fontWeight: 600 }}>{chosenSpells.length}</span>
         </div>
         {orderedLevels.map(lvl => (
           <div key={lvl} className="ds-sb-section">
@@ -2513,6 +2560,7 @@ export default function App() {
           Tap + to add a spell to your book; tap a row to see what it does. Added spells appear in
           Spellcasting by level{isPrepare ? ", where you prepare them for combat" : ""}.
         </p>
+        </>)}
       </div>
     );
   };
