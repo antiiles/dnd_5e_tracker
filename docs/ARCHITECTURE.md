@@ -68,7 +68,12 @@ Fields per entry in `public/content/spells/`:
   - `"auto"` — automatic damage with no attack roll or save (e.g. Magic Missile). Deals
     `"instances"` × `"damage"`, each with an optional flat `"instanceBonus"`; upcast adds
     `"higherLevelInstances"` per slot above base. Magic Missile = `instances:3, damage:"1d4",
-    instanceBonus:1, higherLevelInstances:1` → `3d4+3`, `5d4+5` at level 3.
+    instanceBonus:1, higherLevelInstances:1` → `3d4+3`, `5d4+5` at level 3. Renders in the
+    standard attack card with the "to hit" box reading **Auto**.
+  - `"instances"` / `"higherLevelInstances"` on a `type:"attack"` spell make it a **multi-attack**
+    (one roll per ray/dart), rendered per-beam like Eldritch Blast — shared to-hit, `Damage (×N)`,
+    and a "roll a separate attack for each" note. Scorching Ray = `instances:3,
+    higherLevelInstances:1, damage:"2d6"`.
   - `"addSpellMod"` — add the caster's spell mod to damage/healing (e.g. Cure Wounds).
   - `"cantripScaling": "dice" | "beams"` — cantrips only; scales at character level 5/11/17.
   - `"higherLevel"` — leveled spells only; dice added **per slot level above base** when upcast

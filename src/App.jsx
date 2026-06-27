@@ -1139,14 +1139,29 @@ export default function App() {
       return { heal: amount, healParts: parts, effects };
     }
     if (act.type === "auto") {
-      // Automatic damage, no roll: N instances of `damage` (+ optional flat bonus each).
+      // Automatic damage, no attack roll: N instances of `damage` (+ optional flat bonus each).
+      // Reuses the standard attack card; the "to hit" box reads "Auto" instead of a bonus.
       const count = (act.instances || 1) + (act.higherLevelInstances || 0) * extra;
       const dice = scaleDice(act.damage, count); // "1d4" × 3 → "3d4"
       const perBonus = num(act.instanceBonus);
       const flat = perBonus * count;
       const damage = `${dice}${flat ? fmtFlat(flat) : ""} ${act.damageType || ""}`.trim() || "—";
       const damageParts = act.damage ? [`${count} × ${act.damage}${perBonus ? fmtFlat(perBonus) : ""}`] : [];
-      return { auto: true, damage, damageParts, effects };
+      return { toHit: "Auto", toHitParts: ["always hits — no attack roll"], damage, damageParts, effects };
+    }
+    if (act.type === "attack" && (act.instances || act.higherLevelInstances)) {
+      // Multi-attack spell (rays/darts), each its own attack roll — same display as Eldritch Blast.
+      const count = (act.instances || 1) + (act.higherLevelInstances || 0) * extra;
+      const smod = mods[spellAbilityKey];
+      const toHitParts = [`${spellAbilityKey.toUpperCase()} ${fmtMod(smod)}`, `proficiency +${pb}`];
+      const dmgFlat = act.addSpellMod ? smod : 0;
+      const dmgParts = act.damage ? [act.damage] : [];
+      if (act.addSpellMod) dmgParts.push(`${spellAbilityKey.toUpperCase()} ${fmtMod(smod)}`);
+      const damage = act.damage ? `${act.damage}${dmgFlat ? fmtFlat(dmgFlat) : ""} ${act.damageType || ""}`.trim() : "—";
+      return {
+        perBeam: true, beams: count, toHit: fmtMod(smod + pb), toHitParts, damage, damageParts: dmgParts,
+        effects: [...effects, `${count} ray${count > 1 ? "s" : ""} — roll a separate attack for each.`],
+      };
     }
     const r = computeAttack(spellToAttack(spell, lvl));
     return { ...r, effects };
@@ -2169,13 +2184,12 @@ export default function App() {
                   )}
                   <div className="ds-atk-result">
                     <div className="ds-atk-stat">
-                      <div className="lab">{r.heal ? "Healing" : r.auto ? "Damage (auto-hit)" : r.save ? "Spell save DC" : r.perBeam ? "To hit (each beam)" : "To hit"}</div>
-                      <div className="val">{r.heal ? r.heal : r.auto ? r.damage : r.save ? r.save : r.toHit}</div>
-                      {!r.heal && !r.auto && r.toHitParts && <div className="src">{r.toHitParts.join(" · ")}</div>}
+                      <div className="lab">{r.heal ? "Healing" : r.save ? "Spell save DC" : r.perBeam ? "To hit (each beam)" : "To hit"}</div>
+                      <div className="val">{r.heal ? r.heal : r.save ? r.save : r.toHit}</div>
+                      {!r.heal && r.toHitParts && <div className="src">{r.toHitParts.join(" · ")}</div>}
                       {r.heal && r.healParts && r.healParts.length > 0 && <div className="src">{r.healParts.join(" · ")}</div>}
-                      {r.auto && r.damageParts && r.damageParts.length > 0 && <div className="src">{r.damageParts.join(" · ")}</div>}
                     </div>
-                    {!r.heal && !r.auto && (
+                    {!r.heal && (
                       <div className="ds-atk-stat">
                         <div className="lab">{r.perBeam ? `Damage (×${r.beams})` : "Damage"}</div>
                         <div className="val">{r.damage}</div>
