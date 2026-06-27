@@ -77,6 +77,36 @@ spells (Fireball in a 5th-level slot = 10d6, etc.).
 ## 7. Mobile UI audit
 Run the app on a real mobile viewport (or DevTools). Fix layout issues: tap targets too small, horizontal overflow, inputs hard to use on touch. The existing CSS was not designed for mobile.
 
+## 9. Refactor: extract pure logic + tests ✅ done (phases 1–2)
+Split the monolithic `src/App.jsx` (~3,100 lines) by extracting all framework-free logic into
+`src/lib/` (constants, helpers, slot tables, character model, attack/spell engines) and `src/content/`
+(loader, adapters, IndexedDB homebrew). `App.jsx` is now the React layer only and builds `engineCtx`
+once per render to feed the now-pure engines. Added **Vitest** (`npm test`) with characterization tests
+co-located next to each module (57 tests). See [docs/CODEMAP.md](docs/CODEMAP.md).
+
+Also added `src/lib/seeds.js` — the first-run party now seeds three level-5 examples (Warlock, Wizard,
+Bard) so all caster shapes (pact/prepare/known) and engine paths are easy to eyeball. Cross-checked
+against SRD content in `seeds.test.js`.
+
+**Phase 3 — CSS ✅ done.** The `CSS` template literal + `T` theme tokens were extracted to
+`src/theme.css`: tokens became CSS custom properties (`:root { --gold: … }`, plus 3 alpha-variant vars
+for gradient stops), all rules use `var(--x)`, and the 10 inline `style={{color: T.x}}` became
+`"var(--x)"`. `App.jsx` now holds **zero** styling literals; `theme.css` is imported once in `main.jsx`.
+
+**Remaining refactor phase (not yet done):**
+- **Phase 4 — component split:** break the single `App()` (all `render*()` closures) into feature
+  components under `src/components/`, introducing a characters context to avoid prop-drilling. The
+  Vitest suite from phase 1 is the safety net for this.
+
+## Known latent bugs (found during the refactor, NOT yet fixed)
+- **Legacy `cls`/`level` migration never fires.** `hydrateCharacter` guards the migration on
+  `c.classes.length === 0`, but `makeCharacter()` seeds a non-empty `classes` array that the
+  `{...base, ...raw}` spread keeps — so importing an old-format character silently loses its class.
+  Characterized by a test in `src/lib/character.test.js`. Fix: detect legacy `raw.cls` directly, or
+  only seed `base.classes` when `raw` has neither `classes` nor `cls`.
+- **Duplicate `useMyDC` key** in the familiar-investment object literal (~`App.jsx:914`) — esbuild warns
+  on every build; the second assignment wins. Harmless but should be deduped.
+
 ## 8. Deploy to static host ✅ done
 Continuous deployment from `main` to **GitHub Pages** via `.github/workflows/deploy.yml` (build →
 `actions/upload-pages-artifact` → `actions/deploy-pages`). The repo was made public (Pages on the free

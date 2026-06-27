@@ -1,711 +1,18 @@
 import React, { useState, useEffect } from "react";
+import { ABILITIES, SPELL_LEVELS } from "./lib/constants.js";
+import { uid, num, abilityMod, fmtMod, profBonus, fmtFlat } from "./lib/helpers.js";
+import { slotsFor, FAMILIAR_FORMS, WARLOCK_SLOTS, WARLOCK_INV_KNOWN, isPactPrereq } from "./lib/slots.js";
+import { makeCharacter, normalizeAttack, hydrateCharacter, charactersFromImport } from "./lib/character.js";
+import { seedCharacters } from "./lib/seeds.js";
+import { computeAttack as computeAttackEngine } from "./lib/attacks.js";
+import {
+  computeSpellCard as computeSpellCardEngine,
+  spellSummary as spellSummaryEngine,
+  isSpellActive as isSpellActiveEngine,
+} from "./lib/spells.js";
+import { CONTENT_TYPES, validateUserContent, getUserFiles, putUserFile, deleteUserFile } from "./content/userContent.js";
+import { loadContent } from "./content/loader.js";
 
-// ───────────────────────── Reference data ─────────────────────────
-const ABILITIES = [
-  ["str", "Strength", "STR"],
-  ["dex", "Dexterity", "DEX"],
-  ["con", "Constitution", "CON"],
-  ["int", "Intelligence", "INT"],
-  ["wis", "Wisdom", "WIS"],
-  ["cha", "Charisma", "CHA"],
-];
-
-const SPELL_LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
-
-// ───────────────────────── Helpers ─────────────────────────
-const uid = () => Math.random().toString(36).slice(2, 9);
-const num = (v, d = 0) => {
-  if (v === "" || v === null || v === undefined) return d;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : d;
-};
-const abilityMod = (score) => Math.floor((num(score, 10) - 10) / 2);
-const fmtMod = (n) => (n >= 0 ? `+${n}` : `${n}`);
-const profBonus = (level) => Math.ceil(num(level, 1) / 4) + 1; // 1–4:+2, 5–8:+3 ... 17–20:+6
-
-// Content types a user can extend, with display labels (for the homebrew UI).
-const CONTENT_TYPES = [
-  ["races", "Races"],
-  ["classes", "Classes"],
-  ["skills", "Skills"],
-  ["feats", "Feats"],
-  ["weapons", "Weapons"],
-  ["spells", "Spells"],
-  ["invocations", "Invocations"],
-  ["patrons", "Patrons"],
-  ["pacts", "Pacts"],
-];
-
-// ───────────────────────── User content (IndexedDB) ─────────────────────────
-// Homebrew lives in IndexedDB (db "dnd-content", store "userContent"), one record
-// per content type: { type, files: [{ name, addedAt, items: [...] }] }. It's merged
-// after SRD at load time, so a user id overrides the matching SRD id.
-const IDB_NAME = "dnd-content";
-const IDB_STORE = "userContent";
-
-function idbOpen() {
-  return new Promise((resolve, reject) => {
-    if (typeof indexedDB === "undefined") return reject(new Error("IndexedDB unavailable"));
-    const req = indexedDB.open(IDB_NAME, 1);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE, { keyPath: "type" });
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-const idbReq = (req) =>
-  new Promise((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-
-// All user files for one type ([] when none, or IndexedDB is unavailable).
-async function getUserFiles(type) {
-  try {
-    const db = await idbOpen();
-    const rec = await idbReq(db.transaction(IDB_STORE, "readonly").objectStore(IDB_STORE).get(type));
-    db.close();
-    return rec && Array.isArray(rec.files) ? rec.files : [];
-  } catch (e) {
-    return [];
-  }
-}
-
-// Add or replace (by name) one user file under a type. Read and write use separate
-// transactions so we never touch a transaction that has gone inactive across an await.
-async function putUserFile(type, name, items) {
-  const files = (await getUserFiles(type)).filter((f) => f.name !== name);
-  files.push({ name, addedAt: Date.now(), items });
-  const db = await idbOpen();
-  await idbReq(db.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).put({ type, files }));
-  db.close();
-}
-
-// Remove one user file (by name) from a type.
-async function deleteUserFile(type, name) {
-  const files = (await getUserFiles(type)).filter((f) => f.name !== name);
-  const db = await idbOpen();
-  await idbReq(db.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).put({ type, files }));
-  db.close();
-}
-
-// Basic schema check: a non-empty array of objects, each with a string id + name.
-function validateUserContent(parsed) {
-  if (!Array.isArray(parsed)) return { ok: false, error: "Expected a JSON array of entries." };
-  if (parsed.length === 0) return { ok: false, error: "That array is empty." };
-  for (const item of parsed) {
-    if (!item || typeof item !== "object" || Array.isArray(item))
-      return { ok: false, error: "Every entry must be an object." };
-    if (typeof item.id !== "string" || !item.id.trim())
-      return { ok: false, error: 'Every entry needs a non-empty "id".' };
-    if (typeof item.name !== "string" || !item.name.trim())
-      return { ok: false, error: 'Every entry needs a non-empty "name".' };
-  }
-  return { ok: true, count: parsed.length };
-}
-
-// ───────────────────────── Content loading ─────────────────────────
-// Fetch one content type's files from public/content/<type>/, merging by id
-// in index order (later files — user overrides — win on collision).
-async function loadContentType(type) {
-  const base = `${import.meta.env.BASE_URL}content/${type}`;
-  const files = await fetch(`${base}/index.json`).then((r) => r.json());
-  const arrays = await Promise.all(files.map((f) => fetch(`${base}/${f}`).then((r) => r.json())));
-  const userFiles = await getUserFiles(type);
-  const byId = new Map();
-  arrays.forEach((arr) => arr.forEach((item) => byId.set(item.id, item)));
-  // User content is applied last, so a homebrew id overrides the SRD id.
-  userFiles.forEach((f) => (f.items || []).forEach((item) => byId.set(item.id, item)));
-  return [...byId.values()];
-}
-
-// Adapters: normalize loaded JSON into the shapes the component already consumes.
-const adaptRaces = (rows) =>
-  Object.fromEntries(
-    rows.map((r) => [
-      r.name,
-      {
-        asi: r.abilityBonuses || {},
-        speed: r.speed,
-        size: r.size,
-        traits: (r.traits || []).map((t) => [t.name, t.description]),
-        subraces: Object.fromEntries(
-          (r.subraces || []).map((s) => {
-            const sub = { asi: s.abilityBonuses || {}, traits: (s.traits || []).map((t) => [t.name, t.description]) };
-            if (s.speed != null) sub.speed = s.speed;
-            return [s.name, sub];
-          })
-        ),
-      },
-    ])
-  );
-
-const adaptClasses = (rows) =>
-  Object.fromEntries(
-    rows.map((c) => [
-      c.id,
-      {
-        name: c.name,
-        hitDie: c.hitDie,
-        saves: c.savingThrows || [],
-        spellAbility: (c.spellcasting && c.spellcasting.ability) || "",
-        caster: (c.spellcasting && c.spellcasting.type) || null,
-        learning: (c.spellcasting && c.spellcasting.learningType) || null,
-        features: (c.features || []).map((f) => ({ level: f.level, name: f.name, desc: f.description })),
-        resources: c.resources || [],
-        mechanics: c.mechanics || [],
-      },
-    ])
-  );
-
-const adaptSkills = (rows) => rows.map((s) => [s.id, s.name, s.ability]);
-const adaptFeats = (rows) => Object.fromEntries(rows.map((f) => [f.name, f.description]));
-const adaptWeapons = (rows) =>
-  rows.map((w) => ({ name: w.name, dice: w.damage, type: w.damageType, versatile: w.versatileDamage, props: w.properties || [] }));
-const adaptInvocations = (rows) =>
-  rows.map((i) => ({ name: i.name, level: i.prerequisiteLevel, prereq: i.prerequisite || "", desc: i.description }));
-const adaptPatrons = (rows) => Object.fromEntries(rows.map((p) => [p.name, p.description]));
-const adaptPacts = (rows) => Object.fromEntries(rows.map((p) => [p.name, p.description]));
-const adaptSpells = (rows) =>
-  rows.map((s) => ({
-    id: s.id,
-    name: s.name,
-    level: s.level ?? 0,
-    school: s.school || "",
-    castingTime: s.castingTime || "",
-    range: s.range || "",
-    duration: s.duration || "",
-    concentration: !!s.concentration,
-    ritual: !!s.ritual,
-    classes: Array.isArray(s.classes) ? s.classes : [],
-    description: s.description || "",
-    action: s.action || null,
-  }));
-
-const MECHANIC_ADAPTERS = {
-  invocations: adaptInvocations,
-  patrons: adaptPatrons,
-  pacts: adaptPacts,
-};
-
-// Load every content type and adapt into the constant shapes used in render.
-async function loadContent() {
-  const [races, classes, skills, feats, weapons, spells] = await Promise.all(
-    ["races", "classes", "skills", "feats", "weapons", "spells"].map(loadContentType)
-  );
-
-  // Only fetch mechanic folders declared by at least one class
-  const neededMechanics = [...new Set(classes.flatMap((c) => c.mechanics || []))];
-  const mechanicData = Object.fromEntries(
-    await Promise.all(
-      neededMechanics.map(async (type) => [type, await loadContentType(type)])
-    )
-  );
-
-  return {
-    RACES: adaptRaces(races),
-    CLASSES: adaptClasses(classes),
-    SKILLS: adaptSkills(skills),
-    FEATS: adaptFeats(feats),
-    WEAPONS: adaptWeapons(weapons),
-    SPELLS: adaptSpells(spells),
-    INVOCATIONS: MECHANIC_ADAPTERS.invocations(mechanicData.invocations || []),
-    PATRONS: MECHANIC_ADAPTERS.patrons(mechanicData.patrons || []),
-    PACTS: MECHANIC_ADAPTERS.pacts(mechanicData.pacts || []),
-  };
-}
-
-// Spell slot progressions (index by character level → [1st..9th])
-const FULL_SLOTS = {
-  1: [2], 2: [3], 3: [4, 2], 4: [4, 3], 5: [4, 3, 2], 6: [4, 3, 3], 7: [4, 3, 3, 1],
-  8: [4, 3, 3, 2], 9: [4, 3, 3, 3, 1], 10: [4, 3, 3, 3, 2], 11: [4, 3, 3, 3, 2, 1],
-  12: [4, 3, 3, 3, 2, 1], 13: [4, 3, 3, 3, 2, 1, 1], 14: [4, 3, 3, 3, 2, 1, 1],
-  15: [4, 3, 3, 3, 2, 1, 1, 1], 16: [4, 3, 3, 3, 2, 1, 1, 1], 17: [4, 3, 3, 3, 2, 1, 1, 1, 1],
-  18: [4, 3, 3, 3, 3, 1, 1, 1, 1], 19: [4, 3, 3, 3, 3, 2, 1, 1, 1], 20: [4, 3, 3, 3, 3, 2, 2, 1, 1],
-};
-const HALF_SLOTS = {
-  2: [2], 3: [3], 4: [3], 5: [4, 2], 6: [4, 2], 7: [4, 3], 8: [4, 3], 9: [4, 3, 2], 10: [4, 3, 2],
-  11: [4, 3, 3], 12: [4, 3, 3], 13: [4, 3, 3, 1], 14: [4, 3, 3, 1], 15: [4, 3, 3, 2], 16: [4, 3, 3, 2],
-  17: [4, 3, 3, 3, 1], 18: [4, 3, 3, 3, 1], 19: [4, 3, 3, 3, 2], 20: [4, 3, 3, 3, 2],
-};
-// Warlock pact magic: [slotLevel, count]
-const WARLOCK_SLOTS = {
-  1: [1, 1], 2: [1, 2], 3: [2, 2], 4: [2, 2], 5: [3, 2], 6: [3, 2], 7: [4, 2], 8: [4, 2],
-  9: [5, 2], 10: [5, 2], 11: [5, 3], 12: [5, 3], 13: [5, 3], 14: [5, 3], 15: [5, 3], 16: [5, 3],
-  17: [5, 4], 18: [5, 4], 19: [5, 4], 20: [5, 4],
-};
-// Third-caster (Eldritch Knight / Arcane Trickster subclasses); slots start at class level 3
-const THIRD_SLOTS = {
-  3: [2], 4: [3], 5: [3], 6: [3], 7: [4, 2], 8: [4, 2], 9: [4, 2],
-  10: [4, 3], 11: [4, 3], 12: [4, 3], 13: [4, 3, 2], 14: [4, 3, 2],
-  15: [4, 3, 2], 16: [4, 3, 3], 17: [4, 3, 3], 18: [4, 3, 3],
-  19: [4, 3, 3, 1], 20: [4, 3, 3, 1],
-};
-
-// How many Eldritch Invocations a warlock knows at each level
-const WARLOCK_INV_KNOWN = {
-  1: 0, 2: 2, 3: 2, 4: 2, 5: 3, 6: 3, 7: 4, 8: 4, 9: 5, 10: 5,
-  11: 5, 12: 6, 13: 6, 14: 6, 15: 7, 16: 7, 17: 7, 18: 8, 19: 8, 20: 8,
-};
-
-const isPactPrereq = (p) => typeof p === "string" && p.startsWith("Pact of");
-
-// Pact of the Chain familiar forms (standard stat blocks; values are editable).
-const FAMILIAR_FORMS = {
-  Imp: {
-    ac: 13, hp: 10, speed: "20 ft, fly 40 ft",
-    attacks: [{ name: "Sting", toHit: 5, dice: "1d4", bonusDmg: 3, damageType: "piercing", hasSave: true, saveAbility: "con", fixedDC: 11, effect: "On a failed save, 3d6 poison damage (half on success)." }],
-  },
-  Pseudodragon: {
-    ac: 13, hp: 7, speed: "15 ft, fly 60 ft",
-    attacks: [
-      { name: "Bite", toHit: 4, dice: "1d4", bonusDmg: 2, damageType: "piercing" },
-      { name: "Sting", toHit: 4, dice: "1d4", bonusDmg: 2, damageType: "piercing", hasSave: true, saveAbility: "con", fixedDC: 11, effect: "On a fail, poisoned 1 hour; if it fails by 5+, unconscious for the same time." },
-    ],
-  },
-  Quasit: {
-    ac: 13, hp: 7, speed: "40 ft",
-    attacks: [{ name: "Claws", toHit: 4, dice: "1d4", bonusDmg: 3, damageType: "slashing", hasSave: true, saveAbility: "con", fixedDC: 10, effect: "On a fail, 2d4 poison damage and poisoned for 1 minute." }],
-  },
-  Sprite: {
-    ac: 15, hp: 2, speed: "10 ft, fly 40 ft",
-    attacks: [
-      { name: "Shortsword", toHit: 2, dice: "1", bonusDmg: 0, damageType: "slashing" },
-      { name: "Longbow", toHit: 6, dice: "1", bonusDmg: 0, damageType: "piercing", hasSave: true, saveAbility: "con", fixedDC: 10, effect: "On a fail, poisoned 1 minute; if it fails by 5+, unconscious until it takes damage." },
-    ],
-  },
-  Custom: { ac: 12, hp: 1, speed: "", attacks: [] },
-};
-
-function emptySlots() {
-  const s = {};
-  SPELL_LEVELS.forEach((l) => (s[l] = { cur: 0, max: 0 }));
-  return s;
-}
-// Build a fresh slot object for a class + level, fully rested
-function slotsFor(caster, level) {
-  const s = emptySlots();
-  const lv = Math.max(1, Math.min(20, num(level, 1)));
-  if (caster === "full" || caster === "half" || caster === "third") {
-    const table = caster === "full" ? FULL_SLOTS : caster === "half" ? HALF_SLOTS : THIRD_SLOTS;
-    const row = table[lv] || [];
-    row.forEach((n, i) => (s[i + 1] = { cur: n, max: n }));
-  } else if (caster === "warlock") {
-    const [slvl, count] = WARLOCK_SLOTS[lv] || [0, 0];
-    if (slvl) s[slvl] = { cur: count, max: count };
-  }
-  return s;
-}
-function makeCharacter(name = "New Adventurer") {
-  const abilities = {};
-  ABILITIES.forEach(([k]) => (abilities[k] = 10));
-  const savingProfs = {};
-  ABILITIES.forEach(([k]) => (savingProfs[k] = false));
-  const skillProfs = {}; // keyed by skill id as the user toggles proficiency
-  const spellSlots = {};
-  SPELL_LEVELS.forEach((l) => (spellSlots[l] = { cur: 0, max: 0 }));
-  return {
-    id: uid(),
-    name,
-    classes: [{ id: "", level: 1 }],
-    race: "",
-    subrace: "",
-    background: "",
-    alignment: "",
-    xp: 0,
-    inspiration: false,
-    abilities,
-    savingProfs,
-    skillProfs,
-    ac: 10,
-    speed: 30,
-    initMisc: 0,
-    hp: { current: 10, max: 10, temp: 0 },
-    hitDice: { total: 1, remaining: 1, dieType: 8 },
-    concentration: null,
-    deathSaves: { s: 0, f: 0 },
-    spellAbility: "",
-    spellSlots,
-    patron: "",
-    pact: "",
-    attacks: [],
-    feats: [],
-    invocations: [],
-    familiar: { enabled: false, name: "", form: "", ac: 12, hp: { current: 1, max: 1, temp: 0 }, speed: "", notes: "", attacks: [] },
-    resources: {},
-    spells: [],
-    preparedSpells: [],
-    features: "",
-    equipment: "",
-    bio: "",
-  };
-}
-
-// Bring any attack (including legacy {name,bonus,dmg}) into the structured shape.
-function normalizeAttack(a) {
-  if (!a || typeof a !== "object") return null;
-  if (a.kind) return a;
-  return { id: a.id || uid(), kind: "manual", name: a.name || "", toHit: a.bonus || "", damage: a.dmg || "", effect: a.notes || "" };
-}
-
-// Merge an imported/raw character onto current defaults so no field is missing.
-function hydrateCharacter(raw) {
-  if (!raw || typeof raw !== "object") return null;
-  const base = makeCharacter(raw.name || "Imported");
-  const c = { ...base, ...raw, id: uid() };
-  c.abilities = { ...base.abilities, ...(raw.abilities || {}) };
-  c.savingProfs = { ...base.savingProfs, ...(raw.savingProfs || {}) };
-  c.skillProfs = { ...base.skillProfs, ...(raw.skillProfs || {}) };
-  c.spellSlots = { ...base.spellSlots, ...(raw.spellSlots || {}) };
-  c.hp = { ...base.hp, ...(raw.hp || {}) };
-  // migrate legacy cls/level → classes array
-  if (!Array.isArray(c.classes) || c.classes.length === 0) {
-    c.classes = raw.cls ? [{ id: raw.cls.toLowerCase(), level: num(raw.level, 1) }] : base.classes;
-  }
-  // migrate legacy hitDice {cur,max,die} → {total,remaining,dieType}
-  if (raw.hitDice && ("cur" in raw.hitDice || "max" in raw.hitDice)) {
-    const dieType = parseInt(String(raw.hitDice.die || "d8").replace(/[^0-9]/g, ""), 10) || 8;
-    c.hitDice = { total: num(raw.hitDice.max, 1), remaining: num(raw.hitDice.cur, 1), dieType };
-  } else {
-    c.hitDice = { ...base.hitDice, ...(raw.hitDice || {}) };
-  }
-  if (c.concentration === undefined) c.concentration = null;
-  c.resources = (raw.resources && typeof raw.resources === "object" && !Array.isArray(raw.resources)) ? { ...raw.resources } : {};
-  c.deathSaves = { ...base.deathSaves, ...(raw.deathSaves || {}) };
-  c.attacks = (Array.isArray(raw.attacks) ? raw.attacks : []).map(normalizeAttack).filter(Boolean);
-  c.feats = Array.isArray(raw.feats) ? raw.feats : [];
-  c.invocations = Array.isArray(raw.invocations) ? raw.invocations : [];
-  c.spells = Array.isArray(raw.spells) ? raw.spells : [];
-  c.preparedSpells = Array.isArray(raw.preparedSpells) ? raw.preparedSpells : [];
-  c.familiar = { ...base.familiar, ...(raw.familiar || {}) };
-  c.familiar.hp = { ...base.familiar.hp, ...((raw.familiar && raw.familiar.hp) || {}) };
-  c.familiar.attacks = Array.isArray(raw.familiar && raw.familiar.attacks) ? raw.familiar.attacks : [];
-  return c;
-}
-
-// Pull an array of characters out of any supported export shape.
-function charactersFromImport(data) {
-  let arr = null;
-  if (Array.isArray(data)) arr = data;
-  else if (data && Array.isArray(data.characters)) arr = data.characters;
-  else if (data && data.abilities) arr = [data];
-  if (!arr) return [];
-  return arr.map(hydrateCharacter).filter(Boolean);
-}
-
-// ───────────────────────── Theme ─────────────────────────
-const T = {
-  ink: "#14121C",
-  ink2: "#0E0C14",
-  panel: "#201B2E",
-  panel2: "#2A2440",
-  line: "#3A3354",
-  lineSoft: "#2E2842",
-  gold: "#D8B45A",
-  goldDim: "#8C7434",
-  violet: "#9A7BE0",
-  violetDim: "#5E4A99",
-  crimson: "#CF5450",
-  green: "#74B36F",
-  text: "#ECE6D8",
-  dim: "#A89FB8",
-  faint: "#766E8A",
-};
-
-const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Spectral:ital,wght@0,400;0,500;0,600;1,400&display=swap');
-
-.ds-root *{box-sizing:border-box;}
-.ds-root{
-  font-family:'Spectral',Georgia,serif;
-  color:${T.text};
-  background:
-    radial-gradient(1200px 600px at 80% -10%, rgba(154,123,224,0.10), transparent 60%),
-    radial-gradient(900px 500px at -10% 110%, rgba(216,180,90,0.07), transparent 55%),
-    ${T.ink};
-  min-height:100vh;
-  -webkit-font-smoothing:antialiased;
-}
-.ds-wrap{max-width:1080px;margin:0 auto;padding:0 14px 96px;}
-
-/* top bar */
-.ds-top{
-  position:sticky;top:0;z-index:20;
-  background:linear-gradient(${T.ink2}, ${T.ink2}f2);
-  border-bottom:1px solid ${T.line};
-  backdrop-filter:blur(6px);
-}
-.ds-top-inner{max-width:1080px;margin:0 auto;padding:10px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
-.ds-brand{font-family:'Cinzel',serif;font-weight:700;letter-spacing:2px;color:${T.gold};font-size:18px;line-height:1;}
-.ds-brand small{display:block;font-family:'Spectral',serif;font-weight:400;letter-spacing:3px;
-  color:${T.faint};font-size:9px;text-transform:uppercase;margin-top:3px;}
-.ds-spacer{flex:1;}
-
-.ds-select, .ds-input, .ds-textarea{
-  font-family:'Spectral',serif;color:${T.text};background:${T.panel};
-  border:1px solid ${T.line};border-radius:8px;padding:8px 10px;font-size:15px;outline:none;
-}
-.ds-select{min-width:150px;}
-.ds-input:focus,.ds-textarea:focus,.ds-select:focus{border-color:${T.gold};box-shadow:0 0 0 2px rgba(216,180,90,0.25);}
-.ds-input::placeholder,.ds-textarea::placeholder{color:${T.faint};}
-
-.ds-btn{
-  font-family:'Cinzel',serif;font-size:12px;letter-spacing:1px;cursor:pointer;
-  background:${T.panel};color:${T.text};border:1px solid ${T.line};
-  border-radius:8px;padding:8px 12px;transition:border-color .15s,background .15s;
-}
-.ds-btn:hover{border-color:${T.gold};}
-.ds-btn-gold{background:linear-gradient(${T.goldDim},#6f5a26);border-color:${T.gold};color:#1a160c;font-weight:600;}
-.ds-btn-ghost{background:transparent;}
-.ds-btn-danger:hover{border-color:${T.crimson};color:${T.crimson};}
-.ds-icon-btn{cursor:pointer;background:transparent;border:1px solid transparent;color:${T.faint};
-  border-radius:6px;padding:4px 7px;font-size:14px;line-height:1;}
-.ds-icon-btn:hover{color:${T.crimson};border-color:${T.lineSoft};}
-
-/* tabs */
-.ds-tabs{position:sticky;top:53px;z-index:15;display:flex;gap:6px;overflow-x:auto;
-  background:${T.ink}; padding:10px 0 8px; border-bottom:1px solid ${T.lineSoft};}
-.ds-tab{flex:0 0 auto;font-family:'Cinzel',serif;letter-spacing:1px;font-size:12px;cursor:pointer;
-  background:transparent;border:1px solid ${T.lineSoft};color:${T.dim};
-  border-radius:999px;padding:7px 16px;transition:all .15s;}
-.ds-tab:hover{color:${T.text};}
-.ds-tab[data-on="1"]{color:${T.gold};border-color:${T.gold};background:rgba(216,180,90,0.08);}
-
-/* layout */
-.ds-grid{display:grid;gap:14px;margin-top:16px;}
-.ds-panel{background:linear-gradient(${T.panel}, ${T.panel}e8);border:1px solid ${T.line};
-  border-radius:14px;padding:16px;}
-.ds-panel-title{font-family:'Cinzel',serif;letter-spacing:2px;font-size:12px;text-transform:uppercase;
-  color:${T.gold};margin:0 0 12px;display:flex;align-items:center;gap:8px;}
-.ds-panel-title::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,${T.goldDim},transparent);}
-
-/* identity header */
-.ds-id-name{font-family:'Cinzel',serif;font-weight:700;font-size:26px;color:${T.text};
-  background:transparent;border:none;border-bottom:1px solid ${T.lineSoft};width:100%;padding:2px 0 6px;outline:none;}
-.ds-id-name:focus{border-color:${T.gold};}
-.ds-id-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-top:14px;}
-.ds-field label{display:block;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:${T.faint};margin-bottom:3px;}
-.ds-field .ds-input{width:100%;padding:6px 9px;font-size:14px;}
-
-/* stat tiles row */
-.ds-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:10px;}
-.ds-stat{background:${T.ink2};border:1px solid ${T.line};border-radius:12px;padding:10px 6px;text-align:center;}
-.ds-stat .lab{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:${T.faint};}
-.ds-stat .big{font-family:'Cinzel',serif;font-size:26px;color:${T.gold};line-height:1.1;margin-top:4px;}
-.ds-stat .ds-input{width:100%;text-align:center;background:transparent;border:none;
-  font-family:'Cinzel',serif;font-size:26px;color:${T.gold};padding:2px 0;}
-.ds-stat .ds-input:focus{box-shadow:none;}
-
-/* ability runestones */
-.ds-abil-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:12px;}
-.ds-rune{position:relative;background:
-   radial-gradient(120% 90% at 50% 0%, rgba(154,123,224,0.12), transparent 70%), ${T.ink2};
-  border:1px solid ${T.line};border-radius:14px;padding:12px 8px 10px;text-align:center;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,0.04), 0 6px 14px rgba(0,0,0,0.35);}
-.ds-rune .ab{font-family:'Cinzel',serif;letter-spacing:2px;font-size:11px;color:${T.dim};}
-.ds-rune .mod{font-family:'Cinzel',serif;font-size:34px;font-weight:700;color:${T.gold};line-height:1;margin:6px 0 8px;}
-.ds-rune .score{display:inline-flex;align-items:center;justify-content:center;gap:4px;}
-.ds-rune .score input{width:46px;text-align:center;background:${T.panel};border:1px solid ${T.line};
-  border-radius:8px;color:${T.text};font-family:'Spectral',serif;font-size:15px;padding:3px 0;}
-.ds-rune .score input:focus{border-color:${T.gold};outline:none;}
-.ds-rune .rbonus{font-size:11px;color:${T.violet};background:rgba(154,123,224,0.14);
-  border:1px solid ${T.violetDim};border-radius:6px;padding:1px 5px;font-family:'Spectral',serif;}
-.ds-rune .total{font-size:10px;color:${T.faint};margin-top:6px;letter-spacing:.5px;text-transform:uppercase;}
-
-/* rows: saves & skills */
-.ds-rowlist{display:grid;gap:4px;}
-.ds-row{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:8px;}
-.ds-row:hover{background:rgba(255,255,255,0.02);}
-.ds-row .rname{flex:1;font-size:15px;}
-.ds-row .rabb{font-size:10px;color:${T.faint};text-transform:uppercase;letter-spacing:1px;width:30px;}
-.ds-row .rbonus{font-family:'Cinzel',serif;font-size:16px;color:${T.text};min-width:34px;text-align:right;}
-
-.ds-pip{width:22px;height:22px;border-radius:6px;border:1px solid ${T.line};cursor:pointer;
-  display:flex;align-items:center;justify-content:center;font-size:11px;color:${T.faint};
-  background:${T.ink2};flex:0 0 auto;user-select:none;transition:all .12s;}
-.ds-pip[data-s="1"]{border-color:${T.violet};color:${T.violet};background:rgba(154,123,224,0.12);}
-.ds-pip[data-s="2"]{border-color:${T.gold};color:${T.gold};background:rgba(216,180,90,0.14);}
-
-/* hp */
-.ds-hp-main{display:flex;align-items:flex-end;gap:8px;justify-content:center;}
-.ds-hp-main .cur{font-family:'Cinzel',serif;font-size:46px;color:${T.text};line-height:1;}
-.ds-hp-main .sep{font-size:26px;color:${T.faint};padding-bottom:4px;}
-.ds-hp-main input{width:88px;text-align:center;background:transparent;border:none;
-  font-family:'Cinzel',serif;font-size:46px;color:${T.text};}
-.ds-hp-main .maxin{width:60px;font-size:26px;color:${T.dim};text-align:left;padding-bottom:2px;}
-.ds-hp-main input:focus{outline:none;}
-.ds-hp-bar{height:10px;border-radius:6px;background:${T.ink2};border:1px solid ${T.line};margin:12px 0;overflow:hidden;}
-.ds-hp-fill{height:100%;background:linear-gradient(90deg,${T.crimson},#e07a5f);transition:width .25s;}
-.ds-hp-tools{display:flex;gap:8px;align-items:stretch;flex-wrap:wrap;justify-content:center;}
-.ds-hp-tools .ds-input{width:88px;text-align:center;}
-
-.ds-dots{display:flex;gap:6px;}
-.ds-dot{width:18px;height:18px;border-radius:50%;border:1px solid ${T.line};cursor:pointer;background:${T.ink2};transition:all .12s;}
-.ds-dot[data-on="1"][data-kind="s"]{background:${T.green};border-color:${T.green};}
-.ds-dot[data-on="1"][data-kind="f"]{background:${T.crimson};border-color:${T.crimson};}
-
-/* attacks & slots */
-.sl-pips{display:flex;flex-wrap:wrap;gap:5px;min-height:18px;}
-.ds-sp{width:16px;height:16px;border-radius:50%;border:1px solid ${T.violetDim};cursor:pointer;background:transparent;}
-.ds-sp[data-on="1"]{background:${T.violet};border-color:${T.violet};}
-
-.ds-res-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;}
-.ds-res-item{background:${T.ink2};border:1px solid ${T.line};border-radius:10px;padding:10px;}
-.ds-res-name{font-family:'Cinzel',serif;font-size:11px;letter-spacing:1px;color:${T.gold};margin-bottom:8px;}
-.ds-res-recharge{font-size:11px;color:${T.faint};margin-top:6px;}
-.ds-res-counter{display:flex;align-items:center;gap:8px;}
-.ds-res-val{min-width:50px;text-align:center;font-size:18px;font-weight:600;color:${T.text};}
-.ds-res-btn{width:28px;height:28px;border-radius:6px;border:1px solid ${T.line};background:${T.panel2};color:${T.text};cursor:pointer;font-size:18px;line-height:1;display:flex;align-items:center;justify-content:center;}
-.ds-res-btn:disabled{opacity:.35;cursor:default;}
-.ds-res-toggle{width:100%;padding:7px 0;font-size:13px;}
-.ds-res-used{background:${T.panel}!important;color:${T.faint}!important;border-color:${T.line}!important;}
-.ds-textarea{width:100%;min-height:150px;resize:vertical;line-height:1.6;font-size:15px;}
-.ds-muted{color:${T.dim};font-size:13px;}
-
-/* spellbook */
-.ds-sb-section{margin-bottom:14px;}
-.ds-sb-lvl-head{font-family:'Cinzel',serif;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:${T.violet};margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid ${T.lineSoft};}
-.ds-sb-row{display:flex;align-items:flex-start;gap:9px;padding:6px 4px;border-bottom:1px solid ${T.lineSoft};}
-.ds-sb-row.ds-sb-on{background:rgba(154,123,224,0.06);}
-.ds-sb-add{flex:0 0 auto;width:26px;height:26px;border-radius:7px;border:1px solid ${T.violetDim};background:transparent;color:${T.violet};cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;}
-.ds-sb-add.on{background:${T.violet};border-color:${T.violet};color:${T.ink};}
-.ds-sb-body{flex:1 1 auto;cursor:pointer;min-width:0;}
-.ds-sb-line{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
-.ds-sb-name{font-size:14px;font-weight:500;color:${T.text};}
-.ds-sb-tags{font-size:10px;color:${T.faint};text-transform:capitalize;}
-.ds-sb-summary{font-size:11px;color:${T.violet};margin-left:auto;white-space:nowrap;}
-.ds-sb-detail{margin-top:5px;font-size:13px;color:${T.dim};line-height:1.5;}
-.ds-sb-detail p{margin:2px 0 0;}
-.ds-sb-meta{font-size:11px;color:${T.faint};text-transform:capitalize;}
-
-/* derived spell attacks */
-.ds-sub-label{font-family:'Cinzel',serif;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:${T.gold};margin:14px 0 8px;}
-.ds-atk-derived{border-style:dashed;}
-.ds-atk-name-static{flex:1 1 auto;font-family:'Cinzel',serif;font-size:15px;color:${T.text};}
-
-/* spellcasting: per-level blocks */
-.ds-cast-level{border:1px solid ${T.line};border-radius:10px;padding:9px 11px;margin-bottom:9px;background:${T.ink2};}
-.ds-cast-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
-.ds-cast-head .lv{font-family:'Cinzel',serif;font-size:11px;letter-spacing:1px;color:${T.violet};min-width:64px;}
-.ds-cast-head .sl-pips{flex:1 1 auto;}
-.ds-cast-head .sl-max{display:flex;align-items:center;gap:6px;font-size:12px;color:${T.faint};}
-.ds-cast-head .sl-max input{width:46px;text-align:center;background:${T.panel};border:1px solid ${T.line};border-radius:6px;color:${T.text};padding:3px;}
-.ds-cast-spells{margin-top:8px;padding-top:8px;border-top:1px solid ${T.lineSoft};display:flex;flex-direction:column;gap:7px;}
-.ds-cast-spell{display:flex;flex-direction:column;gap:5px;}
-.ds-cast-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap;}
-.ds-cast-body{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:9px;flex-wrap:wrap;
-  background:transparent;border:none;padding:0;margin:0;cursor:pointer;text-align:left;font:inherit;color:inherit;}
-.ds-cast-name{font-size:14px;color:${T.text};}
-.ds-cast-summary{font-size:11px;color:${T.violet};}
-.ds-cast-tag{font-size:10px;color:${T.gold};border:1px solid ${T.goldDim};border-radius:5px;padding:1px 5px;}
-.ds-cast-chev{margin-left:auto;color:${T.faint};font-size:10px;transition:transform .15s;}
-.ds-cast-chev.open{transform:rotate(180deg);}
-.ds-cast-detail{margin-left:2px;border-left:2px solid ${T.violetDim};padding-left:11px;}
-.ds-cast-detail p{margin:3px 0 0;font-size:13px;color:${T.dim};line-height:1.5;}
-.ds-prep-toggle{font-size:11px;border:1px solid ${T.violetDim};background:transparent;color:${T.dim};border-radius:6px;padding:2px 9px;cursor:pointer;min-width:74px;}
-.ds-prep-toggle.on{background:${T.violet};border-color:${T.violet};color:${T.ink};font-weight:600;}
-.ds-panel-toggle{width:100%;background:transparent;border:none;cursor:pointer;}
-.ds-fold-chev{display:inline-block;color:${T.violet};font-size:10px;transition:transform .15s;}
-.ds-fold-chev.open{transform:rotate(90deg);}
-.ds-fold-count{margin-left:6px;font-size:11px;color:${T.violet};font-weight:600;letter-spacing:0;}
-.ds-empty{color:${T.faint};font-style:italic;font-size:14px;padding:6px 0;}
-.ds-feat{padding:9px 0;border-bottom:1px solid ${T.lineSoft};}
-.ds-feat:last-child{border-bottom:none;}
-.ds-feat .fn{font-family:'Cinzel',serif;font-size:13px;color:${T.text};letter-spacing:.4px;}
-.ds-feat .flv{font-size:10px;color:${T.violet};margin-left:8px;letter-spacing:1px;text-transform:uppercase;}
-.ds-feat .fd{font-size:13px;color:${T.dim};margin-top:3px;line-height:1.5;}
-.ds-auto-note{font-size:11px;color:${T.faint};font-style:italic;margin:-4px 0 12px;}
-.ds-rest-row{display:flex;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid ${T.lineSoft};}
-.ds-rest-row .ds-btn{flex:1;padding:11px;}
-.ds-feat-add{margin-bottom:12px;}
-.ds-feat-add .ds-input{width:100%;}
-.ds-feat-item{border:1px solid ${T.lineSoft};border-radius:10px;padding:10px;margin-bottom:10px;background:${T.ink2};}
-.ds-feat-head{display:flex;gap:8px;align-items:center;}
-.ds-feat-item .fname{flex:1;font-family:'Cinzel',serif;font-size:14px;}
-.ds-feat-item .fdesc{width:100%;min-height:64px;margin-top:8px;font-size:14px;}
-.ds-toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:50;
-  background:${T.panel2};border:1px solid ${T.gold};color:${T.text};padding:11px 16px;
-  border-radius:10px;font-size:13px;max-width:90%;text-align:center;
-  box-shadow:0 8px 24px rgba(0,0,0,0.5);animation:dsfade .2s ease;}
-.ds-inv{display:flex;gap:10px;padding:10px;border:1px solid ${T.lineSoft};border-radius:10px;
-  margin-bottom:8px;cursor:pointer;background:${T.ink2};transition:border-color .12s,background .12s;}
-.ds-inv:hover{border-color:${T.violetDim};}
-.ds-inv[data-on="1"]{border-color:${T.violet};background:rgba(154,123,224,0.10);}
-.ds-inv-check{flex:0 0 auto;width:22px;height:22px;border-radius:6px;border:1px solid ${T.line};
-  display:flex;align-items:center;justify-content:center;color:${T.violet};font-size:13px;}
-.ds-inv[data-on="1"] .ds-inv-check{border-color:${T.violet};background:rgba(154,123,224,0.18);}
-.ds-inv-name{font-family:'Cinzel',serif;font-size:14px;color:${T.text};
-  display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
-.ds-inv-tag,.ds-inv-lv{font-size:9px;letter-spacing:.5px;text-transform:uppercase;
-  border-radius:5px;padding:1px 6px;font-family:'Spectral',serif;}
-.ds-inv-tag{color:${T.gold};border:1px solid ${T.goldDim};}
-.ds-inv-lv{color:${T.violet};border:1px solid ${T.violetDim};}
-.ds-inv-desc{font-size:13px;color:${T.dim};margin-top:4px;line-height:1.5;}
-.ds-pp-desc{font-size:13px;color:${T.dim};margin:10px 0 0;line-height:1.5;}
-.ds-pp-desc b{color:${T.text};font-family:'Cinzel',serif;font-weight:600;}
-.ds-count{font-family:'Cinzel',serif;}
-.ds-count[data-over="1"]{color:${T.crimson};}
-.ds-modal-bg{position:fixed;inset:0;z-index:60;background:rgba(8,6,12,0.72);
-  display:flex;align-items:flex-start;justify-content:center;padding:36px 14px;
-  overflow:auto;animation:dsfade .18s ease;}
-.ds-modal{background:linear-gradient(${T.panel}, ${T.panel}f0);border:1px solid ${T.line};
-  border-radius:16px;padding:20px;max-width:520px;width:100%;
-  box-shadow:0 24px 70px rgba(0,0,0,0.6);}
-.ds-modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
-.ds-modal-sec{margin-top:16px;padding-top:16px;border-top:1px solid ${T.lineSoft};}
-.ds-sec-label{font-family:'Cinzel',serif;letter-spacing:1.5px;font-size:11px;
-  text-transform:uppercase;color:${T.gold};margin-bottom:10px;}
-.ds-btn-row{display:flex;gap:8px;flex-wrap:wrap;}
-.ds-modal label.ds-btn{cursor:pointer;display:inline-block;}
-.ds-add-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px;}
-.ds-add-row .ds-input{flex:0 0 auto;}
-.ds-atk{border:1px solid ${T.line};border-radius:12px;padding:12px;margin-bottom:12px;
-  background:linear-gradient(${T.panel}, ${T.panel}e8);}
-.ds-atk-top{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
-.ds-atk-name{flex:1;font-family:'Cinzel',serif;font-size:15px;}
-.ds-atk-kind{font-size:9px;letter-spacing:1px;text-transform:uppercase;color:${T.faint};
-  border:1px solid ${T.lineSoft};border-radius:5px;padding:2px 6px;}
-.ds-atk-result{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
-@media(max-width:480px){.ds-atk-result{grid-template-columns:1fr;}}
-.ds-atk-stat{background:${T.ink2};border:1px solid ${T.line};border-radius:10px;padding:10px;}
-.ds-atk-stat .lab{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:${T.faint};}
-.ds-atk-stat .val{font-family:'Cinzel',serif;font-size:22px;color:${T.gold};margin-top:3px;line-height:1.15;}
-.ds-atk-stat .src{font-size:11px;color:${T.dim};margin-top:6px;line-height:1.5;}
-.ds-atk-fx{list-style:none;padding:0;margin:0 0 6px;}
-.ds-atk-fx li{font-size:12px;color:${T.violet};padding:2px 0 2px 15px;position:relative;line-height:1.45;}
-.ds-atk-fx li::before{content:"◆";position:absolute;left:0;color:${T.violetDim};font-size:8px;top:5px;}
-.ds-atk-ctl{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;
-  border-top:1px solid ${T.lineSoft};padding-top:10px;}
-.ds-mini{display:flex;flex-direction:column;gap:3px;}
-.ds-mini label{font-size:9px;letter-spacing:1px;text-transform:uppercase;color:${T.faint};}
-.ds-mini input,.ds-mini select{background:${T.ink2};border:1px solid ${T.line};border-radius:7px;
-  color:${T.text};padding:6px 8px;font-family:'Spectral',serif;font-size:14px;}
-.ds-mini input{width:62px;text-align:center;}
-.ds-mini input:focus,.ds-mini select:focus{border-color:${T.gold};outline:none;}
-.ds-chip{cursor:pointer;user-select:none;border:1px solid ${T.line};border-radius:7px;
-  padding:8px 11px;font-size:12px;color:${T.dim};background:${T.ink2};align-self:flex-end;}
-.ds-chip[data-on="1"]{border-color:${T.gold};color:${T.gold};background:rgba(216,180,90,0.12);}
-
-a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{
-  outline:2px solid ${T.gold};outline-offset:2px;}
-
-.ds-fade{animation:dsfade .25s ease;}
-@keyframes dsfade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
-@media(prefers-reduced-motion:reduce){.ds-fade{animation:none;}.ds-hp-fill{transition:none;}}
-
-.ds-chk{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;font-size:14px;}
-.ds-chkbox{width:20px;height:20px;border-radius:6px;border:1px solid ${T.line};background:${T.ink2};
-  display:flex;align-items:center;justify-content:center;color:${T.gold};font-size:13px;}
-.ds-chkbox[data-on="1"]{border-color:${T.gold};background:rgba(216,180,90,0.14);}
-
-.ds-userfile{display:flex;align-items:center;gap:8px;border:1px solid ${T.line};border-radius:8px;
-  padding:7px 10px;margin-bottom:6px;background:${T.ink2};}
-.ds-userfile-name{flex:1;font-size:13px;word-break:break-all;}
-.ds-userfile-count{font-size:11px;color:${T.faint};white-space:nowrap;}
-`;
 
 // ───────────────────────── App ─────────────────────────
 export default function App() {
@@ -794,35 +101,9 @@ export default function App() {
         /* nothing saved yet */
       }
       if (!cancelled) {
-        const c = makeCharacter("Hilda Coalhand");
-        c.race = "Dwarf";
-        c.subrace = "Hill Dwarf";
-        c.classes = [{ id: "warlock", level: 5 }];
-        c.abilities = { str: 10, dex: 10, con: 8, int: 8, wis: 10, cha: 18 };
-        c.savingProfs = { str: false, dex: false, con: false, int: false, wis: true, cha: true };
-        c.skillProfs = { ...c.skillProfs, arcana: 1, deception: 1, investigation: 1 };
-        c.spellAbility = "cha";
-        c.patron = "Great Old One";
-        c.pact = "Pact of the Chain";
-        c.ac = 13;
-        c.speed = 25;
-        c.hp = { current: 28, max: 28, temp: 0 };
-        c.hitDice = { total: 5, remaining: 5, dieType: 8 };
-        c.spellSlots = slotsFor("warlock", 5);
-        c.invocations = ["Agonizing Blast", "Investment of the Chain Master"];
-        c.spells = ["eldritch-blast", "hex", "toll-the-dead"];
-        c.attacks = [
-          { id: uid(), kind: "weapon", name: "Light Crossbow", dice: "1d8", versatile: null, damageType: "piercing", props: ["ranged", "loading", "two-handed"], ability: "dex", proficient: true, twoHanded: false, addMod: true, magic: 0, bonusDmg: 0, effect: "" },
-        ];
-        c.familiar = {
-          enabled: true, name: "Pipsqueak", form: "Imp", ac: 13,
-          hp: { current: 10, max: 10, temp: 0 }, speed: "20 ft, fly 40 ft", notes: "",
-          attacks: [
-            { id: uid(), name: "Sting", toHit: 5, dice: "1d4", bonusDmg: 3, damageType: "piercing", hasSave: true, saveAbility: "con", useMyDC: true, fixedDC: 11, magical: true, effect: "On a failed save, 3d6 poison damage (half on success)." },
-          ],
-        };
-        setCharacters([c]);
-        setActiveId(c.id);
+        const seeds = seedCharacters();
+        setCharacters(seeds);
+        setActiveId(seeds[0].id);
         setLoaded(true);
       }
     })();
@@ -893,8 +174,7 @@ export default function App() {
   if (!loaded || !content || !active) {
     return (
       <div className="ds-root">
-        <style>{CSS}</style>
-        <div style={{ padding: 40, textAlign: "center", color: T.dim }}>Opening the codex…</div>
+        <div style={{ padding: 40, textAlign: "center", color: "var(--dim)" }}>Opening the codex…</div>
       </div>
     );
   }
@@ -1028,180 +308,28 @@ export default function App() {
     });
   const addManual = () => pushAttack({ id: uid(), kind: "manual", name: "", toHit: "", damage: "", effect: "" });
 
-  // Compute to-hit / damage breakdown for an attack.
-  const fmtFlat = (n) => (n > 0 ? `+${n}` : n < 0 ? `${n}` : "");
-  const computeAttack = (a) => {
-    const sp = active.spellAbility || "cha";
-    if (a.kind === "manual") {
-      return { manual: true, toHit: a.toHit || "—", damage: a.damage || "—", effects: a.effect ? [a.effect] : [] };
-    }
-    if (a.kind === "spell") {
-      const smod = mods[sp];
-      const magic = num(a.magic);
-      if (a.eldritchBlast) {
-        const beams = charLevel >= 17 ? 4 : charLevel >= 11 ? 3 : charLevel >= 5 ? 2 : 1;
-        const ag = (active.invocations || []).includes("Agonizing Blast");
-        const rep = (active.invocations || []).includes("Repelling Blast");
-        const dmgFlat = (ag ? smod : 0) + num(a.bonusDmg);
-        const hitParts = [`${sp.toUpperCase()} ${fmtMod(smod)}`, `proficiency +${pb}`];
-        if (magic) hitParts.push(`magic ${fmtMod(magic)}`);
-        const dmgParts = ["1d10"];
-        if (ag) dmgParts.push(`${sp.toUpperCase()} ${fmtMod(smod)} (Agonizing Blast)`);
-        if (num(a.bonusDmg)) dmgParts.push(`bonus ${fmtMod(num(a.bonusDmg))}`);
-        const effects = [
-          `${beams} beam${beams > 1 ? "s" : ""}, each a separate attack roll.`,
-          ag ? "Agonizing Blast adds your spellcasting modifier to each beam (included)." : "Take Agonizing Blast to add your modifier to damage.",
-          rep ? "Repelling Blast: push the target up to 10 ft on a hit." : null,
-          a.effect,
-        ].filter(Boolean);
-        return { beams, perBeam: true, toHit: fmtMod(smod + pb + magic), toHitParts: hitParts, damage: `1d10${fmtFlat(dmgFlat)} ${a.damageType}`, damageParts: dmgParts, effects };
-      }
-      const dmgFlat = (a.addMod ? smod : 0) + num(a.bonusDmg);
-      const dmgParts = a.dice ? [a.dice] : [];
-      if (a.addMod) dmgParts.push(`${sp.toUpperCase()} ${fmtMod(smod)}`);
-      if (num(a.bonusDmg)) dmgParts.push(`bonus ${fmtMod(num(a.bonusDmg))}`);
-      const damage = a.dice ? `${a.dice}${fmtFlat(dmgFlat)} ${a.damageType || ""}`.trim() : "—";
-      if (a.mode === "save") {
-        const dc = 8 + pb + smod + magic;
-        const parts = ["base 8", `proficiency +${pb}`, `${sp.toUpperCase()} ${fmtMod(smod)}`];
-        if (magic) parts.push(`magic ${fmtMod(magic)}`);
-        return { save: `DC ${dc} ${(a.saveAbility || "dex").toUpperCase()}`, toHitParts: parts, damage, damageParts: dmgParts, effects: a.effect ? [a.effect] : [] };
-      }
-      const hitParts = [`${sp.toUpperCase()} ${fmtMod(smod)}`, `proficiency +${pb}`];
-      if (magic) hitParts.push(`magic ${fmtMod(magic)}`);
-      return { toHit: fmtMod(smod + pb + magic), toHitParts: hitParts, damage, damageParts: dmgParts, effects: a.effect ? [a.effect] : [] };
-    }
-    // weapon or custom
-    const abil = a.ability || "str";
-    const amod = mods[abil];
-    const magic = num(a.magic);
-    const prof = a.proficient ? pb : 0;
-    const hitParts = [`${abil.toUpperCase()} ${fmtMod(amod)}`];
-    if (a.proficient) hitParts.push(`proficiency +${pb}`);
-    if (magic) hitParts.push(`magic ${fmtMod(magic)}`);
-    const dice = a.kind === "weapon" && a.twoHanded && a.versatile ? a.versatile : a.dice;
-    const dmgFlat = (a.addMod ? amod : 0) + magic + num(a.bonusDmg);
-    const dmgParts = dice ? [dice] : [];
-    if (a.addMod) dmgParts.push(`${abil.toUpperCase()} ${fmtMod(amod)}`);
-    if (magic) dmgParts.push(`magic ${fmtMod(magic)}`);
-    if (num(a.bonusDmg)) dmgParts.push(`bonus ${fmtMod(num(a.bonusDmg))}`);
-    const effects = [];
-    const props = a.props || [];
-    if (props.includes("reach")) effects.push("Reach: +5 ft.");
-    if (props.includes("thrown")) effects.push("Can be thrown.");
-    if (props.includes("loading")) effects.push("Loading: one shot per action.");
-    if (props.includes("light")) effects.push("Light: eligible for two-weapon fighting.");
-    if (props.includes("heavy")) effects.push("Heavy: Small creatures have disadvantage.");
-    if (a.effect) effects.push(a.effect);
-    return { toHit: fmtMod(amod + prof + magic), toHitParts: hitParts, damage: dice ? `${dice}${fmtFlat(dmgFlat)} ${a.damageType || ""}`.trim() : "—", damageParts: dmgParts, effects };
-  };
-
-  // ── spell → action integration ──
-  // Cantrip damage/beams scale at character levels 5/11/17.
-  const cantripMult = (lvl) => (lvl >= 17 ? 4 : lvl >= 11 ? 3 : lvl >= 5 ? 2 : 1);
-  const scaleDice = (dice, factor) => {
-    const m = /^(\d+)d(\d+)$/.exec(String(dice || "").trim());
-    if (!m || factor <= 1) return dice || "";
-    return `${parseInt(m[1], 10) * factor}d${m[2]}`;
-  };
-  // Upcasting: add `perLevel` dice for each slot level a leveled spell is cast above its base.
-  const addDicePerLevel = (base, perLevel, extraLevels) => {
-    if (extraLevels <= 0 || !perLevel) return base || "";
-    const b = /^(\d+)d(\d+)$/.exec(String(base || "").trim());
-    const h = /^(\d+)d(\d+)$/.exec(String(perLevel).trim());
-    if (!b || !h) return base || "";
-    const addN = parseInt(h[1], 10) * extraLevels;
-    if (h[2] === b[2]) return `${parseInt(b[1], 10) + addN}d${b[2]}`; // same die: merge counts
-    return `${base} + ${addN}d${h[2]}`; // mixed dice: append as a second term
-  };
   const spellAbilityKey = active.spellAbility || (classDef && classDef.spellAbility) || "cha";
-  // Map a chosen spell into the attack shape computeAttack consumes (attack/save only).
-  const spellToAttack = (spell, castLevel) => {
-    if (spell.id === "eldritch-blast") {
-      return { id: spell.id, kind: "spell", name: spell.name, eldritchBlast: true,
-        dice: "1d10", damageType: "force", addMod: false, magic: 0, bonusDmg: 0, effect: "" };
-    }
-    const act = spell.action || {};
-    const factor = spell.level === 0 && act.cantripScaling === "dice" ? cantripMult(charLevel) : 1;
-    const lvl = castLevel || spell.level;
-    const extra = spell.level >= 1 && lvl > spell.level ? lvl - spell.level : 0;
-    return {
-      id: spell.id, kind: "spell", name: spell.name,
-      mode: act.type === "save" ? "save" : "attack",
-      saveAbility: act.save || "dex",
-      dice: addDicePerLevel(scaleDice(act.damage, factor), act.higherLevel, extra),
-      damageType: act.damageType || "",
-      addMod: !!act.addSpellMod, magic: 0, bonusDmg: 0, effect: "",
-    };
-  };
-  // Result object (same shape as computeAttack) for any actionable spell, incl. healing.
-  const computeSpellCard = (spell, castLevel) => {
-    const act = spell.action || {};
-    const lvl = castLevel || spell.level;
-    const extra = spell.level >= 1 && lvl > spell.level ? lvl - spell.level : 0;
-    const effects = spell.description ? [spell.description] : [];
-    if (act.higherLevelNote) effects.push(act.higherLevelNote);
-    if (act.type === "heal") {
-      const smod = mods[spellAbilityKey];
-      const factor = spell.level === 0 && act.cantripScaling === "dice" ? cantripMult(charLevel) : 1;
-      const dice = addDicePerLevel(scaleDice(act.damage, factor), act.higherLevel, extra);
-      const flat = act.addSpellMod ? smod : 0;
-      const parts = dice ? [dice] : [];
-      if (act.addSpellMod) parts.push(`${spellAbilityKey.toUpperCase()} ${fmtMod(smod)}`);
-      const amount = `${dice}${flat ? fmtFlat(flat) : ""}`.trim() || "—";
-      return { heal: amount, healParts: parts, effects };
-    }
-    if (act.type === "auto") {
-      // Automatic damage, no attack roll: N instances of `damage` (+ optional flat bonus each).
-      // Reuses the standard attack card; the "to hit" box reads "Auto" instead of a bonus.
-      const count = (act.instances || 1) + (act.higherLevelInstances || 0) * extra;
-      const dice = scaleDice(act.damage, count); // "1d4" × 3 → "3d4"
-      const perBonus = num(act.instanceBonus);
-      const flat = perBonus * count;
-      const damage = `${dice}${flat ? fmtFlat(flat) : ""} ${act.damageType || ""}`.trim() || "—";
-      const damageParts = act.damage ? [`${count} × ${act.damage}${perBonus ? fmtFlat(perBonus) : ""}`] : [];
-      return { toHit: "Auto", toHitParts: ["always hits — no attack roll"], damage, damageParts, effects };
-    }
-    if (act.type === "attack" && (act.instances || act.higherLevelInstances)) {
-      // Multi-attack spell (rays/darts), each its own attack roll — same display as Eldritch Blast.
-      const count = (act.instances || 1) + (act.higherLevelInstances || 0) * extra;
-      const smod = mods[spellAbilityKey];
-      const toHitParts = [`${spellAbilityKey.toUpperCase()} ${fmtMod(smod)}`, `proficiency +${pb}`];
-      const dmgFlat = act.addSpellMod ? smod : 0;
-      const dmgParts = act.damage ? [act.damage] : [];
-      if (act.addSpellMod) dmgParts.push(`${spellAbilityKey.toUpperCase()} ${fmtMod(smod)}`);
-      const damage = act.damage ? `${act.damage}${dmgFlat ? fmtFlat(dmgFlat) : ""} ${act.damageType || ""}`.trim() : "—";
-      return {
-        perBeam: true, beams: count, toHit: fmtMod(smod + pb), toHitParts, damage, damageParts: dmgParts,
-        effects: [...effects, `${count} ray${count > 1 ? "s" : ""} — roll a separate attack for each.`],
-      };
-    }
-    const r = computeAttack(spellToAttack(spell, lvl));
-    return { ...r, effects };
-  };
-  // Short one-line summary of a spell's mechanics (for the spellbook list).
-  const spellSummary = (spell) => {
-    const act = spell.action;
-    if (!act || !act.type || act.type === "none") return null;
-    const r = computeSpellCard(spell);
-    if (act.type === "heal") return `Heals ${r.heal}`;
-    if (act.type === "auto") return `Auto · ${r.damage}`;
-    if (r.save) return r.damage && r.damage !== "—" ? `${r.save} · ${r.damage}` : r.save;
-    const hit = r.perBeam ? `${r.toHit} ea. beam` : `${r.toHit} to hit`;
-    return `${hit} · ${r.damage}`;
-  };
 
   // Repertoire (from Spellbook) and prepared subset (from Spellcasting).
   const chosenSpellIds = active.spells || [];
   const preparedSpellIds = active.preparedSpells || [];
   const isPrepareCaster = !!(classDef && classDef.learning === "prepare");
-  // A spell is castable now: cantrips always; prepared casters need it prepared; known casters always.
-  const isSpellActive = (sp) => {
-    if (!sp) return false;
-    if (sp.level === 0) return true;
-    if (isPrepareCaster) return preparedSpellIds.includes(sp.id);
-    return true;
+  // ── pure attack/spell engines (lib/attacks.js, lib/spells.js) ──
+  // Character-derived context built once; thin wrappers keep render call sites unchanged.
+  const engineCtx = {
+    spellAbility: active.spellAbility,
+    spellAbilityKey,
+    mods,
+    charLevel,
+    pb,
+    invocations: active.invocations || [],
+    isPrepareCaster,
+    preparedSpellIds,
   };
+  const computeAttack = (a) => computeAttackEngine(a, engineCtx);
+  const computeSpellCard = (spell, castLevel) => computeSpellCardEngine(spell, castLevel, engineCtx);
+  const spellSummary = (spell) => spellSummaryEngine(spell, engineCtx);
+  const isSpellActive = (sp) => isSpellActiveEngine(sp, engineCtx);
   const togglePrepared = (id) =>
     patch((c) => ({
       preparedSpells: (c.preparedSpells || []).includes(id)
@@ -1826,10 +954,10 @@ export default function App() {
           value={delta}
           onChange={(e) => setDelta(e.target.value)}
         />
-        <button className="ds-btn" style={{ borderColor: T.crimson, color: T.crimson }} onClick={() => applyHP(-1)}>
+        <button className="ds-btn" style={{ borderColor: "var(--crimson)", color: "var(--crimson)" }} onClick={() => applyHP(-1)}>
           Damage
         </button>
-        <button className="ds-btn" style={{ borderColor: T.green, color: T.green }} onClick={() => applyHP(1)}>
+        <button className="ds-btn" style={{ borderColor: "var(--green)", color: "var(--green)" }} onClick={() => applyHP(1)}>
           Heal
         </button>
       </div>
@@ -1875,12 +1003,12 @@ export default function App() {
         </div>
       </div>
       <div style={{ marginTop: 16 }}>
-        <label style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: T.faint }}>
+        <label style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: "var(--faint)" }}>
           Death saves
         </label>
         <div style={{ display: "flex", gap: 22, marginTop: 8, flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span className="ds-muted" style={{ color: T.green }}>
+            <span className="ds-muted" style={{ color: "var(--green)" }}>
               Successes
             </span>
             <div className="ds-dots">
@@ -1896,7 +1024,7 @@ export default function App() {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span className="ds-muted" style={{ color: T.crimson }}>
+            <span className="ds-muted" style={{ color: "var(--crimson)" }}>
               Failures
             </span>
             <div className="ds-dots">
@@ -2374,18 +1502,18 @@ export default function App() {
             <>
               <div className="ds-stat" style={{ minWidth: 90 }}>
                 <div className="lab">Save DC</div>
-                <div className="big" style={{ color: T.violet }}>{spellDC}</div>
+                <div className="big" style={{ color: "var(--violet)" }}>{spellDC}</div>
               </div>
               <div className="ds-stat" style={{ minWidth: 90 }}>
                 <div className="lab">Spell Atk</div>
-                <div className="big" style={{ color: T.violet }}>{fmtMod(spellAtk)}</div>
+                <div className="big" style={{ color: "var(--violet)" }}>{fmtMod(spellAtk)}</div>
               </div>
             </>
           )}
           {isPrepareCaster && (
             <div className="ds-stat" style={{ minWidth: 90 }}>
               <div className="lab">Prepared</div>
-              <div className="big" style={{ color: T.gold }}>{prepCount} / {prepMax}</div>
+              <div className="big" style={{ color: "var(--gold)" }}>{prepCount} / {prepMax}</div>
             </div>
           )}
         </div>
@@ -2919,7 +2047,6 @@ export default function App() {
 
   return (
     <div className="ds-root">
-      <style>{CSS}</style>
       {renderTop()}
       <div className="ds-wrap">
         {renderTabs()}
@@ -3045,7 +2172,7 @@ export default function App() {
               browser only.
             </p>
             {typeof indexedDB === "undefined" && (
-              <p className="ds-muted" style={{ color: T.violet }}>
+              <p className="ds-muted" style={{ color: "var(--violet)" }}>
                 Storage isn't available here, so additions will only last for this session.
               </p>
             )}

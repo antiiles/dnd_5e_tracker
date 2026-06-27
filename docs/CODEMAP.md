@@ -9,12 +9,39 @@ name (in `code` below) to find the current location.
 ```
 index.html              Vite entry
 src/main.jsx            React mount (9 lines)
-src/App.jsx             The entire app — ~2,300 lines, one file (see breakdown below)
+src/App.jsx             The React UI — state, effects, handlers, all render*() helpers (see breakdown below)
+src/lib/                Pure, framework-free logic (unit-tested). See below.
+src/content/            Content data layer (loading, adapters, IndexedDB homebrew). See below.
+src/theme.css           Theme tokens (CSS custom properties) + all global styles; imported in main.jsx
 vite.config.js          Vite config; base = /dnd_5e_tracker/ on build (subpath deploy)
 public/content/<type>/  Content data: index.json (manifest) + srd.json (data) per type
 .github/workflows/deploy.yml  CI: build → deploy to GitHub Pages on push to main
 docs/                   ARCHITECTURE.md, CODEMAP.md
 TODO.md                 Remaining work, each item a self-contained session
+*.test.js               Vitest characterization tests, co-located next to the module they cover
+
+## Pure logic — `src/lib/` and `src/content/`
+
+Extracted from `App.jsx` so it's testable in isolation and editable without loading the whole UI.
+All of `lib/` is framework-free; `App.jsx` imports from here.
+
+| Module | Exports | Notes |
+|--------|---------|-------|
+| `lib/constants.js` | `ABILITIES`, `SPELL_LEVELS` | Reference data. |
+| `lib/helpers.js` | `uid`, `num`, `abilityMod`, `fmtMod`, `profBonus`, `fmtFlat`, `cantripMult`, `scaleDice`, `addDicePerLevel` | Pure math/format/dice helpers. |
+| `lib/slots.js` | `FULL/HALF/WARLOCK/THIRD_SLOTS`, `WARLOCK_INV_KNOWN`, `isPactPrereq`, `FAMILIAR_FORMS`, `emptySlots`, `slotsFor` | Rules-as-data + slot builder. |
+| `lib/character.js` | `makeCharacter`, `normalizeAttack`, `hydrateCharacter`, `charactersFromImport` | Character model + import/migration. |
+| `lib/seeds.js` | `seedCharacters()` | First-run example party: Warlock (Hilda), Wizard (Alaric, prepare), Bard (Lyra, known), all level 5. Cross-checked against SRD content in its test. |
+| `lib/attacks.js` | `computeAttack(a, ctx)` | To-hit/damage engine. **Pure** — takes a character-derived `ctx`. |
+| `lib/spells.js` | `spellToAttack`, `computeSpellCard`, `spellSummary`, `isSpellActive` (all `(…, ctx)`) | Spell→action integration; reuses `computeAttack`. |
+| `content/adapters.js` | `adapt*`, `MECHANIC_ADAPTERS` | Flatten loaded JSON into UI shapes. |
+| `content/loader.js` | `loadContentType`, `loadContent` | Fetch from `public/content/` (uses `BASE_URL`). |
+| `content/userContent.js` | `CONTENT_TYPES`, `validateUserContent`, `getUserFiles`, `putUserFile`, `deleteUserFile` | IndexedDB homebrew persistence. |
+
+`App.jsx` builds `engineCtx` once per render from the active character (`spellAbility`, `mods`, `charLevel`,
+`pb`, `invocations`, `isPrepareCaster`, `preparedSpellIds`) and wraps the engines as thin `computeAttack`/
+`computeSpellCard`/`spellSummary`/`isSpellActive` closures, so render call sites are unchanged. To change
+combat math, edit `lib/attacks.js`/`lib/spells.js` and their tests — you don't need to open `App.jsx`.
 ```
 
 Content types under `public/content/`: `races`, `classes`, `skills`, `feats`, `weapons`, `spells`,
@@ -22,20 +49,16 @@ Content types under `public/content/`: `races`, `classes`, `skills`, `feats`, `w
 
 ## Inside `src/App.jsx`
 
-Almost everything lives in this one file. Regions, top to bottom:
+`App.jsx` is now the **React layer only** — state, effects, handlers, and all `render*()` helpers.
+Pure logic (constants, helpers, slot tables, character model, content loading/adapters, IndexedDB, the
+attack/spell engines) was extracted into `src/lib/` and `src/content/` — see the table above. The notes
+below describe what remains here, top to bottom:
 
 | Region | Anchors | Notes |
 |--------|---------|-------|
-| Constants & helpers | `ABILITIES`, `SPELL_LEVELS`, `uid`, `abilityMod`, `profBonus` (~4–27) | Pure math/util. |
-| Content loading | `loadContentType`, `loadContent` (~29–115) | Fetches `index.json` then each file; dedupes by `id` (override pattern). Base types always loaded; mechanic folders (`invocations`, `patrons`, `pacts`) fetched only when at least one class declares them in its `mechanics` array. `loadContentType` also merges the user's homebrew (see below) *after* SRD, so a user `id` overrides the SRD one. |
-| User content (IndexedDB) | `idbOpen`, `getUserFiles`, `putUserFile`, `deleteUserFile`, `validateUserContent`, `CONTENT_TYPES` (just before Content loading) | Homebrew persistence: db `dnd-content`, store `userContent`, one record per content type holding named files. The "Content" header button opens a modal (`showContent`) to add (file/paste) and remove files; `reloadContent()` re-runs `loadContent()` after each change. |
-| Content adapters | `adaptRaces`, `adaptClasses`, `adaptSkills`, `adaptSpells`, … (~38–100) | **Flatten** loaded JSON into the shapes the UI consumes. `adaptClasses` keys by `id` and includes `name`, `resources`, `mechanics`, `learning` (spellcasting learningType). `adaptSpells` normalises the spell schema. Still drops `subclasses` — see TODO item 5b. |
-| Spell-slot tables | `FULL_SLOTS`, `HALF_SLOTS`, `WARLOCK_SLOTS`, `THIRD_SLOTS`, `slotsFor`, `emptySlots` (~101–185) | Rules-as-data, lives in app not content. `slotsFor` handles `full`/`half`/`third`/`warlock`. |
-| Familiar data | `FAMILIAR_FORMS` (~145) | Warlock-specific. |
-| Character model | `makeCharacter`, `normalizeAttack`, `hydrateCharacter`, `charactersFromImport` (~190–285) | Current shape: `classes:[{id,level}]`, `hitDice:{total,remaining,dieType}`, `concentration:null`, `resources:{}`, `spells:[]` (repertoire), `preparedSpells:[]`. `hydrateCharacter` migrates legacy `cls`/`level` and `hitDice:{cur,max,die}`; the storage-load path migrates legacy hardcoded `eldritchBlast` attack rows into `spells`. |
-| Theme & styles | `T` (labels/theme), `CSS` (style blob) (~290–530) | |
-| UI | `export default function App()` (~535 → end) | One large component holding all render + state. Derived accessors `activeClassId`, `charLevel`, `classDef`, `classMechanics`, `spellById`, `classResources`, `resourceMax` sit just before the JSX return. Three spell surfaces in the Combat & Magic tab: **Spellbook** (`renderSpellbook()`) is repertoire/reference — browse available spells, add/remove (`active.spells`), expand descriptions (`openSpell` state); the whole panel folds via a chevron header (`spellbookOpen` state). **Spellcasting** (`renderSpellcasting()` + `spellLine()`) lists the repertoire per spell level alongside slot pips/max; prepare casters get a Prepare toggle per leveled spell + a "Prepared N/max" badge. Each `spellLine()` row also expands to show meta + full `description` (multi-open `openCastSpells` Set), independent of the Prepare toggle. Both fold/expand states are ephemeral (not persisted), like `openSpell`/`castLevels`. **Attacks** (`renderAttacks()`) shows only *castable* actionable spells. Patron & Pact / Eldritch Invocations panels (`renderNotes()`) gated on `classMechanics.includes(...)`. |
-| Spell → attack integration | `cantripMult`, `scaleDice`, `addDicePerLevel`, `spellToAttack`, `computeSpellCard`, `spellSummary`, `isSpellActive`, `togglePrepared` (just after `computeAttack`) | A chosen spell with an `action` block maps into the shape `computeAttack` consumes (reusing the to-hit/save/damage engine, incl. Eldritch Blast's beam + invocation logic); healing, `auto` (no-roll automatic damage like Magic Missile — N × `damage` + flat `instanceBonus`; the to-hit box reads "Auto"), and multi-attack `attack` spells with `instances`/`higherLevelInstances` (rays/darts, e.g. Scorching Ray — rendered per-beam like Eldritch Blast) are handled directly in `computeSpellCard`. All reuse the standard derived-card layout. `isSpellActive(sp)` = cantrip ∨ (prepare-caster ? prepared : known). `renderAttacks()` appends castable actionable spells as read-only "From spellbook" cards. **Upcasting:** `spellToAttack`/`computeSpellCard` take a `castLevel`; `addDicePerLevel` adds `action.higherLevel` dice per slot above base. The derived card renders a "Cast at slot" selector (levels ≥ base with `spellSlots[l].max > 0`); chosen level lives in the ephemeral `castLevels` state map (not persisted), defaulting to base or, for warlocks, the pact slot. `handleClassChange` clears `spells`/`preparedSpells` so the spellbook resets per class. |
+| Imports | top of file | Pulls pure logic from `./lib/*` and `./content/*`; the engines are aliased (`computeAttackEngine`, etc.). |
+| UI | `export default function App()` | The component: state, effects, handlers, derived accessors (`activeClassId`, `charLevel`, `classDef`, `classMechanics`, `spellById`, `classResources`, `resourceMax`), and all render helpers. Three spell surfaces in the Combat & Magic tab: **Spellbook** (`renderSpellbook()`) is repertoire/reference — browse available spells, add/remove (`active.spells`), expand descriptions (`openSpell` state); the whole panel folds via a chevron header (`spellbookOpen` state). **Spellcasting** (`renderSpellcasting()` + `spellLine()`) lists the repertoire per spell level alongside slot pips/max; prepare casters get a Prepare toggle per leveled spell + a "Prepared N/max" badge. Each `spellLine()` row also expands to show meta + full `description` (multi-open `openCastSpells` Set), independent of the Prepare toggle. Both fold/expand states are ephemeral (not persisted), like `openSpell`/`castLevels`. **Attacks** (`renderAttacks()`) shows only *castable* actionable spells. Patron & Pact / Eldritch Invocations panels (`renderNotes()`) gated on `classMechanics.includes(...)`. |
+| Engine wrappers | `engineCtx`, `computeAttack`, `computeSpellCard`, `spellSummary`, `isSpellActive` (after the derived accessors) | `engineCtx` packs the character-derived inputs (`spellAbility`, `mods`, `charLevel`, `pb`, `invocations`, `isPrepareCaster`, `preparedSpellIds`); the wrappers forward it to the pure engines in `lib/attacks.js`/`lib/spells.js`. The *math* — to-hit/save/damage, Eldritch Blast beams + invocations, `heal`/`auto`/multi-attack spells, and upcasting via `castLevel`/`addDicePerLevel` — lives in those modules (and their tests), not here. |
 
 > If you only need to change rendering or state, go straight to `App()`. For content/data behavior,
 > stay in the loading + adapter region and don't read the UI.
@@ -45,6 +68,8 @@ Almost everything lives in this one file. Regions, top to bottom:
 ```sh
 npm install      # first time
 npm run dev      # dev server (Vite)
+npm test         # run the Vitest suite once (pure lib/ + content/ logic)
+npm run test:watch  # Vitest in watch mode
 npm run build    # production build → dist/
 npm run preview  # serve the built dist/ locally
 ```
