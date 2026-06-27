@@ -77,5 +77,9 @@ spells (Fireball in a 5th-level slot = 10d6, etc.).
 ## 7. Mobile UI audit
 Run the app on a real mobile viewport (or DevTools). Fix layout issues: tap targets too small, horizontal overflow, inputs hard to use on touch. The existing CSS was not designed for mobile.
 
-## 8. Deploy to static host
-Set up continuous deployment from `main` to Netlify (or Vercel/GitHub Pages). Add a `build` step and configure the publish directory (`dist/`). Test that content JSON files are served correctly.
+## 8. Deploy to static host ✅ done
+Continuous deployment from `main` to **GitHub Pages** via `.github/workflows/deploy.yml` (build →
+`actions/upload-pages-artifact` → `actions/deploy-pages`). The repo was made public (Pages on the free
+plan requires it). `vite.config.js` sets `base` to `/dnd_5e_tracker/` for builds (and `/` for dev);
+content fetches already use `import.meta.env.BASE_URL`, so JSON is served correctly at the subpath.
+Live at https://antiiles.github.io/dnd_5e_tracker/.

@@ -9,8 +9,21 @@ fields.**
 
 ## Stack
 
-Vite + React (plain JSX, no TypeScript). Deployed as a static site (Netlify/Vercel/GitHub Pages).
-No backend. User content stored in IndexedDB.
+Vite + React (plain JSX, no TypeScript). Deployed as a static site to **GitHub Pages** (repo public —
+Pages on the free plan requires it), served from the subpath `/dnd_5e_tracker/`. Continuous deploy
+from `main` via GitHub Actions. No backend. User content stored in IndexedDB.
+
+## Deployment & base path
+
+- Served from a **subpath** (`/dnd_5e_tracker/`), not domain root. Any reference to a bundled asset or
+  content file must resolve through `import.meta.env.BASE_URL` (as the content loader already does) —
+  **never hardcode a root-absolute `/...` path**, it will 404 in production.
+- `vite.config.js` sets `base` to `/dnd_5e_tracker/` for `build` and `/` for `dev`, so `npm run dev`
+  stays at root.
+- `npm run preview` serves at the real subpath — use it to catch base-path regressions before pushing.
+  (Note: `vite preview`'s SPA fallback returns `index.html` for missing files; GitHub Pages serves raw
+  files with real 404s, so preview is stricter-looking than prod for missing-file cases.)
+- No client-side router, so no `404.html` SPA fallback needed.
 
 ## Content system
 

@@ -10,8 +10,9 @@ name (in `code` below) to find the current location.
 index.html              Vite entry
 src/main.jsx            React mount (9 lines)
 src/App.jsx             The entire app — ~2,300 lines, one file (see breakdown below)
-vite.config.js          Vite + React plugin config
+vite.config.js          Vite config; base = /dnd_5e_tracker/ on build (subpath deploy)
 public/content/<type>/  Content data: index.json (manifest) + srd.json (data) per type
+.github/workflows/deploy.yml  CI: build → deploy to GitHub Pages on push to main
 docs/                   ARCHITECTURE.md, CODEMAP.md
 TODO.md                 Remaining work, each item a self-contained session
 ```
@@ -49,3 +50,9 @@ npm run preview  # serve the built dist/ locally
 ```
 
 No backend, no env vars. Content is served statically from `public/content/`.
+
+## Deploying
+
+Push to `main` → GitHub Actions (`.github/workflows/deploy.yml`) builds and publishes `dist/` to
+GitHub Pages. Live at https://antiiles.github.io/dnd_5e_tracker/. No manual step. To verify a build
+locally at the real base path first: `npm run build && npm run preview`.
