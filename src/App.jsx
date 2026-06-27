@@ -1138,6 +1138,16 @@ export default function App() {
       const amount = `${dice}${flat ? fmtFlat(flat) : ""}`.trim() || "—";
       return { heal: amount, healParts: parts, effects };
     }
+    if (act.type === "auto") {
+      // Automatic damage, no roll: N instances of `damage` (+ optional flat bonus each).
+      const count = (act.instances || 1) + (act.higherLevelInstances || 0) * extra;
+      const dice = scaleDice(act.damage, count); // "1d4" × 3 → "3d4"
+      const perBonus = num(act.instanceBonus);
+      const flat = perBonus * count;
+      const damage = `${dice}${flat ? fmtFlat(flat) : ""} ${act.damageType || ""}`.trim() || "—";
+      const damageParts = act.damage ? [`${count} × ${act.damage}${perBonus ? fmtFlat(perBonus) : ""}`] : [];
+      return { auto: true, damage, damageParts, effects };
+    }
     const r = computeAttack(spellToAttack(spell, lvl));
     return { ...r, effects };
   };
@@ -1147,6 +1157,7 @@ export default function App() {
     if (!act || !act.type || act.type === "none") return null;
     const r = computeSpellCard(spell);
     if (act.type === "heal") return `Heals ${r.heal}`;
+    if (act.type === "auto") return `Auto · ${r.damage}`;
     if (r.save) return r.damage && r.damage !== "—" ? `${r.save} · ${r.damage}` : r.save;
     const hit = r.perBeam ? `${r.toHit} ea. beam` : `${r.toHit} to hit`;
     return `${hit} · ${r.damage}`;
@@ -2135,7 +2146,7 @@ export default function App() {
                 : baseLvl;
               const picked = castLevels[spell.id];
               const castLevel = picked != null && slotOptions.includes(picked) ? picked : defaultLvl;
-              const showSelector = (act.higherLevel || act.higherLevelNote) && slotOptions.length > 1;
+              const showSelector = (act.higherLevel || act.higherLevelNote || act.higherLevelInstances) && slotOptions.length > 1;
               const r = computeSpellCard(spell, castLevel);
               const lvl = baseLvl === 0 ? "cantrip" : castLevel > baseLvl ? `cast at level ${castLevel}` : `level ${baseLvl}`;
               return (
@@ -2158,12 +2169,13 @@ export default function App() {
                   )}
                   <div className="ds-atk-result">
                     <div className="ds-atk-stat">
-                      <div className="lab">{r.heal ? "Healing" : r.save ? "Spell save DC" : r.perBeam ? "To hit (each beam)" : "To hit"}</div>
-                      <div className="val">{r.heal ? r.heal : r.save ? r.save : r.toHit}</div>
-                      {!r.heal && r.toHitParts && <div className="src">{r.toHitParts.join(" · ")}</div>}
+                      <div className="lab">{r.heal ? "Healing" : r.auto ? "Damage (auto-hit)" : r.save ? "Spell save DC" : r.perBeam ? "To hit (each beam)" : "To hit"}</div>
+                      <div className="val">{r.heal ? r.heal : r.auto ? r.damage : r.save ? r.save : r.toHit}</div>
+                      {!r.heal && !r.auto && r.toHitParts && <div className="src">{r.toHitParts.join(" · ")}</div>}
                       {r.heal && r.healParts && r.healParts.length > 0 && <div className="src">{r.healParts.join(" · ")}</div>}
+                      {r.auto && r.damageParts && r.damageParts.length > 0 && <div className="src">{r.damageParts.join(" · ")}</div>}
                     </div>
-                    {!r.heal && (
+                    {!r.heal && !r.auto && (
                       <div className="ds-atk-stat">
                         <div className="lab">{r.perBeam ? `Damage (×${r.beams})` : "Damage"}</div>
                         <div className="val">{r.damage}</div>

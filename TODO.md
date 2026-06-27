@@ -66,8 +66,9 @@ spells (Fireball in a 5th-level slot = 10d6, etc.).
 - `addDicePerLevel` helper + a `castLevel` param threaded through `spellToAttack`/`computeSpellCard`.
 - The derived Attacks card shows a "Cast at slot" selector (levels ≥ base with `max > 0`); the choice
   is ephemeral (`castLevels` state, not persisted). Warlocks default to their pact slot.
-- Known limitation: per-level *flat dice* scaling only. Target-count scaling (Magic Missile darts,
-  Scorching Ray) relies on `higherLevelNote`/description text, damage stays at base.
+- Per-level *flat dice* scaling via `higherLevel`. Target/instance-count scaling is handled by the
+  `auto` action type (`higherLevelInstances`) for no-roll spells like Magic Missile (3d4+3 →
+  5d4+5 at level 3). Per-ray *attack-roll* scaling (Scorching Ray) is still note/description only.
 - Seeded `higherLevel` on the flat-scaling SRD damage/heal spells (Fireball, Cure Wounds, Burning
   Hands, Thunderwave, Shatter, Moonbeam, Lightning Bolt, Spirit Guardians, Healing/Mass Healing Word,
   Flame Strike).

@@ -62,9 +62,13 @@ Fields per entry in `public/content/spells/`:
 - `"description"` — short plain-text summary.
 - `"action"` (optional) — combat mechanics that make a spell actionable. When present and
   `type` is not `"none"`, the chosen spell renders as a computed card in the Attacks panel.
-  - `"type": "attack" | "save" | "heal" | "none"`.
+  - `"type": "attack" | "save" | "heal" | "auto" | "none"`.
   - `"damage"` — base dice (e.g. `"8d6"`); `"damageType"` — e.g. `"fire"`.
   - `"save"` — ability for save spells (e.g. `"dex"`).
+  - `"auto"` — automatic damage with no attack roll or save (e.g. Magic Missile). Deals
+    `"instances"` × `"damage"`, each with an optional flat `"instanceBonus"`; upcast adds
+    `"higherLevelInstances"` per slot above base. Magic Missile = `instances:3, damage:"1d4",
+    instanceBonus:1, higherLevelInstances:1` → `3d4+3`, `5d4+5` at level 3.
   - `"addSpellMod"` — add the caster's spell mod to damage/healing (e.g. Cure Wounds).
   - `"cantripScaling": "dice" | "beams"` — cantrips only; scales at character level 5/11/17.
   - `"higherLevel"` — leveled spells only; dice added **per slot level above base** when upcast
